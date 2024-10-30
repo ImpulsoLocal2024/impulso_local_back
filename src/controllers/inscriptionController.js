@@ -1555,57 +1555,62 @@ exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
   const { fileName, caracterizacion_id, source } = req.body;
 
+  console.log("Contenido de req.body:", req.body);
+  console.log("Contenido de req.file:", req.file);
+
   try {
-    // Validar que el archivo fue subido
     if (!req.file) {
       return res.status(400).json({ message: 'No se ha subido ningún archivo' });
     }
 
-    // Validar que el nombre de la tabla es válido
     if (!table_name.startsWith('inscription_') && 
         !table_name.startsWith('provider_') && 
         !table_name.startsWith('pi_')) {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
+    // Configuración de la ruta de almacenamiento persistente en Render
     let uploadDir;
     let finalRecordId = record_id;
 
-    // Si es una tabla 'pi_', usar 'caracterizacion_id' como 'record_id'
     if (table_name.startsWith('pi_')) {
       if (!caracterizacion_id) {
         return res.status(400).json({ message: 'El ID de caracterización es requerido para tablas pi_' });
       }
-      uploadDir = path.join('uploads', 'inscription_caracterizacion', caracterizacion_id.toString());
-      finalRecordId = caracterizacion_id; // Asignar el 'caracterizacion_id' como 'record_id'
+      uploadDir = path.join('/var/data/uploads', 'inscription_caracterizacion', caracterizacion_id.toString());
+      finalRecordId = caracterizacion_id;
     } else {
-      uploadDir = path.join('uploads', table_name, record_id.toString());
+      uploadDir = path.join('/var/data/uploads', table_name, record_id.toString());
     }
 
-    // Crear la carpeta de destino si no existe
+    // Crea el directorio si no existe
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    // Determinar el nombre final del archivo
     const ext = path.extname(req.file.originalname);
     const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
     const newPath = path.join(uploadDir, finalFileName);
 
-    // Mover el archivo a su destino final
-    fs.renameSync(req.file.path, newPath);
+    // Copia el archivo al destino final y elimina el archivo temporal
+    fs.copyFileSync(req.file.path, newPath);
+    fs.unlinkSync(req.file.path); // Elimina el archivo temporal
 
-    // Guardar la ruta relativa del archivo en la base de datos
-    const relativeFilePath = path.join(uploadDir, finalFileName);
+    // Guarda la ruta relativa en la base de datos
+    // Define la ruta relativa para guardar en la base de datos
+const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
 
-    // Guardar la información del archivo en la base de datos
+
+    // Guarda la información del archivo en la base de datos
     const newFile = await File.create({
-      record_id: finalRecordId, // Usar 'finalRecordId' que considera 'caracterizacion_id' para tablas pi_
+      record_id: finalRecordId,
       table_name,
       name: finalFileName,
       file_path: relativeFilePath,
       source: source || 'unknown',
     });
+
+    console.log("Archivo subido y registrado:", newFile);
 
     res.status(200).json({
       message: 'Archivo subido exitosamente',
@@ -1619,6 +1624,7 @@ exports.uploadFile = async (req, res) => {
     });
   }
 };
+
 
 
 // ----------------------------------------------------------------------------------------
