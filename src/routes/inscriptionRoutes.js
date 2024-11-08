@@ -5,6 +5,7 @@ const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 const { authenticateJWT, authorizePermission } = require('../middlewares/authMiddleware');
 
+
 // Ruta para crear un registro en inscription_caracterizacion sin autenticación
 router.post(
   '/inscriptions/tables/:table_name/record/public',
@@ -22,6 +23,12 @@ router.get('/tables/:table_name/fields', inscriptionController.getTableFields);
 
 // Ruta para obtener datos relacionados de una tabla específica (sin autenticación)
 router.get('/tables/:table_name/related-data', inscriptionController.getRelatedData);
+
+// Ruta para validar si un campo ya existe (sin autenticación)
+router.post(
+  '/tables/:table_name/validate',
+  inscriptionController.validateField
+);
 
 // Ruta para crear una nueva tabla (requiere permiso 'manage_tables')
 router.post('/create-table', authenticateJWT, authorizePermission('manage_tables'), inscriptionController.createTable);
@@ -162,5 +169,7 @@ router.post('/tables/:table_name/field-preferences', inscriptionController.saveF
 
 // Ruta para obtener las preferencias de columnas visibles
 router.get('/tables/:table_name/field-preferences', inscriptionController.getFieldPreferences);
+
+
 
 module.exports = router;

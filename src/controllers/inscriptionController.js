@@ -2506,6 +2506,39 @@ exports.getTableFields = async (req, res) => {
   }
 };
 
+// Función para validar si un campo ya existe
+exports.validateField = async (req, res) => {
+  try {
+    const tableName = req.params.table_name;
+    const { fieldName, fieldValue } = req.body;
+
+    // Sanitizar inputs para prevenir inyección SQL
+    // Si estás usando un ORM como Sequelize, puedes evitar problemas de inyección SQL
+
+    // Verificar si la tabla existe en la base de datos
+    const tableExists = await db.schema.hasTable(tableName);
+    if (!tableExists) {
+      return res.status(400).json({ error: 'La tabla especificada no existe.' });
+    }
+
+    // Realizar la consulta para verificar si el valor ya existe
+    const record = await db(tableName)
+      .where(fieldName, fieldValue)
+      .first();
+
+    if (record) {
+      // El valor ya existe
+      return res.json({ exists: true });
+    } else {
+      // El valor no existe
+      return res.json({ exists: false });
+    }
+  } catch (error) {
+    console.error('Error al validar el campo:', error);
+    res.status(500).json({ error: 'Error al validar el campo.' });
+  }
+};
+
 
 
 

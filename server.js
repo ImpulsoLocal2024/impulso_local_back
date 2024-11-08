@@ -36,7 +36,7 @@ app.use('/api/inscriptions', inscriptionRoutes);
 
 // Ruta básica de prueba
 app.get('/', (req, res) => {
-  res.send('API Impulso Capital funcionando');
+  res.send('API Impulso Local funcionando');
 });
 
 // Iniciar el servidor
