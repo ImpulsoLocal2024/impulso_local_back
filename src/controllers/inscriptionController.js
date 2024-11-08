@@ -2506,39 +2506,69 @@ exports.getTableFields = async (req, res) => {
   }
 };
 
-// Función para validar si un campo ya existe
-exports.validateField = async (req, res) => {
-  try {
-    const tableName = req.params.table_name;
-    const { fieldName, fieldValue } = req.body;
+// ----------------------------------------------------------------------------------------
+// ----------------------------- CONTROLADOR validateField -------------------------------
+// ----------------------------------------------------------------------------------------
 
-    // Sanitizar inputs para prevenir inyección SQL
-    // Si estás usando un ORM como Sequelize, puedes evitar problemas de inyección SQL
+exports.validateField = async (req, res) => {
+  const { table_name } = req.params;
+  const { fieldName, fieldValue } = req.body;
+
+  try {
+    // Validar que table_name y fieldName son cadenas alfanuméricas para evitar inyección SQL
+    const isValidIdentifier = (str) => /^[a-zA-Z0-9_ ]+$/.test(str);
+
+    if (!isValidIdentifier(table_name)) {
+      return res.status(400).json({ error: 'Nombre de tabla inválido.' });
+    }
+
+    if (!isValidIdentifier(fieldName)) {
+      return res.status(400).json({ error: 'Nombre de campo inválido.' });
+    }
 
     // Verificar si la tabla existe en la base de datos
-    const tableExists = await db.schema.hasTable(tableName);
-    if (!tableExists) {
-      return res.status(400).json({ error: 'La tabla especificada no existe.' });
+    const tableExistsResult = await sequelize.query(
+      `SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = 'public' AND table_name = :table_name`,
+      {
+        replacements: { table_name },
+        type: QueryTypes.SELECT,
+      }
+    );
+
+    if (parseInt(tableExistsResult[0].count) === 0) {
+      return res.status(400).json({ error: `La tabla '${table_name}' no existe.` });
     }
 
-    // Realizar la consulta para verificar si el valor ya existe
-    const record = await db(tableName)
-      .where(fieldName, fieldValue)
-      .first();
+    // Verificar si el campo existe en la tabla
+    const fieldExistsResult = await sequelize.query(
+      `SELECT COUNT(*) AS count FROM information_schema.columns WHERE table_schema = 'public' AND table_name = :table_name AND column_name = :fieldName`,
+      {
+        replacements: { table_name, fieldName },
+        type: QueryTypes.SELECT,
+      }
+    );
 
-    if (record) {
-      // El valor ya existe
-      return res.json({ exists: true });
-    } else {
-      // El valor no existe
-      return res.json({ exists: false });
+    if (parseInt(fieldExistsResult[0].count) === 0) {
+      return res.status(400).json({ error: `El campo '${fieldName}' no existe en la tabla '${table_name}'.` });
     }
+
+    // Consultar si el valor ya existe en la tabla
+    const valueExistsResult = await sequelize.query(
+      `SELECT COUNT(*) AS count FROM "${table_name}" WHERE "${fieldName}" = :fieldValue`,
+      {
+        replacements: { fieldValue },
+        type: QueryTypes.SELECT,
+      }
+    );
+
+    const exists = parseInt(valueExistsResult[0].count) > 0;
+
+    res.json({ exists });
   } catch (error) {
     console.error('Error al validar el campo:', error);
-    res.status(500).json({ error: 'Error al validar el campo.' });
+    res.status(500).json({ error: 'Error al validar el campo.', details: error.message });
   }
 };
-
 
 
 
