@@ -164,11 +164,21 @@ router.get(
   inscriptionController.getVisibleColumns
 );
 
+// Ruta para actualizar el cumplimiento de un archivo asociado a un registro (requiere permiso 'manage_tables')
+router.put(
+  '/tables/:table_name/record/:record_id/file/:file_id/compliance',
+  authenticateJWT,
+  authorizePermission('manage_tables'),
+  inscriptionController.updateFileCompliance
+);
+
 // Ruta para guardar las preferencias de columnas visibles
 router.post('/tables/:table_name/field-preferences', inscriptionController.saveFieldPreferences);
 
 // Ruta para obtener las preferencias de columnas visibles
 router.get('/tables/:table_name/field-preferences', inscriptionController.getFieldPreferences);
+
+
 
 
 

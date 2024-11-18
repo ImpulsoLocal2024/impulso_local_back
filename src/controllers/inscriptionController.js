@@ -2570,6 +2570,52 @@ exports.validateField = async (req, res) => {
   }
 };
 
+// ----------------------------------------------------------------------------------------
+// ----------------------------- CONTROLADOR updateFileCompliance -------------------------
+// ----------------------------------------------------------------------------------------
+
+const { sequelize, QueryTypes } = require('../database/database'); // Asegúrate de importar QueryTypes
+
+exports.updateFileCompliance = async (req, res) => {
+  const { table_name, record_id, file_id } = req.params;
+  const { cumple, descripcion_cumplimiento } = req.body;
+
+  try {
+    // Validar entrada
+    if (cumple === undefined || cumple === null) {
+      return res.status(400).json({ error: 'El campo "cumple" es requerido' });
+    }
+
+    // Actualizar el archivo en la base de datos
+    const [results] = await sequelize.query(
+      `UPDATE files
+       SET cumple = :cumple, "descripcion cumplimiento" = :descripcion_cumplimiento
+       WHERE id = :file_id AND record_id = :record_id AND table_name = :table_name
+       RETURNING id`,
+      {
+        replacements: {
+          cumple,
+          descripcion_cumplimiento,
+          file_id,
+          record_id,
+          table_name,
+        },
+        type: QueryTypes.UPDATE,
+      }
+    );
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'Archivo no encontrado o no pertenece al registro' });
+    }
+
+    res.json({ message: 'Estado de cumplimiento actualizado correctamente' });
+  } catch (error) {
+    console.error('Error actualizando el cumplimiento:', error);
+    res.status(500).json({ error: 'Error actualizando el cumplimiento' });
+  }
+};
+
+
 
 
 
