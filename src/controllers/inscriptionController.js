@@ -2574,8 +2574,6 @@ exports.validateField = async (req, res) => {
 // ----------------------------- CONTROLADOR updateFileCompliance -------------------------
 // ----------------------------------------------------------------------------------------
 
-const { sequelize, QueryTypes } = require('../database/database'); // Asegúrate de importar QueryTypes
-
 exports.updateFileCompliance = async (req, res) => {
   const { table_name, record_id, file_id } = req.params;
   const { cumple, descripcion_cumplimiento } = req.body;
