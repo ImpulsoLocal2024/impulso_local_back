@@ -134,7 +134,7 @@ router.get(
   inscriptionController.getTableRecords
 );
 
-// Ruta para obtener los registros de inscription_caracterizacion con estado 1 o 2
+// Ruta para obtener los registros de inscription_caracterizacion con estado 4
 router.get(
   '/pi/caracterizacion/records',
   authenticateJWT,
