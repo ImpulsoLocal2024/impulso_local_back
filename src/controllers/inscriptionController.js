@@ -2613,6 +2613,38 @@ exports.updateFileCompliance = async (req, res) => {
   }
 };
 
+// ----------------------------------------------------------------------------------------
+// -------------------------------- CONTROLADOR deleteTableRecord -------------------------
+// ----------------------------------------------------------------------------------------
+
+exports.deleteTableRecord = async (req, res) => {
+  const { table_name, record_id } = req.params;
+
+  try {
+    // Validar que el nombre de la tabla comience con 'pi_'
+    if (!table_name.startsWith('pi_')) {
+      return res.status(400).json({ message: 'Nombre de tabla inválido' });
+    }
+
+    // Ejecutar la consulta para eliminar el registro específico
+    const deleteQuery = `DELETE FROM "${table_name}" WHERE id = :record_id RETURNING *`;
+    const result = await sequelize.query(deleteQuery, {
+      replacements: { record_id },
+      type: sequelize.QueryTypes.DELETE,
+    });
+
+    // Verificar si no se encontró el registro a eliminar
+    if (result[1] === 0) {
+      return res.status(404).json({ message: 'Registro no encontrado' });
+    }
+
+    return res.status(200).json({ message: 'Registro eliminado con éxito' });
+  } catch (error) {
+    console.error('Error eliminando el registro:', error);
+    res.status(500).json({ message: 'Error eliminando el registro', error: error.message });
+  }
+};
+
 
 
 
