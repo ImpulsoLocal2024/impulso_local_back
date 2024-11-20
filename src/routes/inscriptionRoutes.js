@@ -178,8 +178,21 @@ router.post('/tables/:table_name/field-preferences', inscriptionController.saveF
 // Ruta para obtener las preferencias de columnas visibles
 router.get('/tables/:table_name/field-preferences', inscriptionController.getFieldPreferences);
 
+// Ruta para obtener datos relacionados en el contexto de PI (Plan de Inversión)
+router.get(
+  '/pi/tables/:table_name/related-data',
+  authenticateJWT, 
+  authorizePermission('view_tables'), 
+  inscriptionController.getRelatedData
+);
 
-
+// Ruta para eliminar un registro específico en una tabla dinámica de PI
+router.delete(
+  '/pi/tables/:table_name/record/:record_id',
+  authenticateJWT,
+  authorizePermission('manage_tables'),
+  inscriptionController.deleteTableRecord
+);
 
 
 module.exports = router;
