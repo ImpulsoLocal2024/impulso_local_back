@@ -2282,7 +2282,11 @@ exports.createNewRecord = async (req, res) => {
       const tableColumns = columns.reduce((acc, column) => {
         const sequelizeType = validTypes[column.data_type.toLowerCase()];
         if (sequelizeType) {
-          acc[column.column_name] = { type: sequelizeType, allowNull: true };
+          acc[column.column_name] = {
+            type: sequelizeType,
+            allowNull: true,
+            field: column.column_name, // Asegurarse de mapear el nombre del campo correctamente
+          };
           if (column.column_name === 'id') {
             acc[column.column_name].primaryKey = true;
             acc[column.column_name].autoIncrement = true;
@@ -2295,6 +2299,23 @@ exports.createNewRecord = async (req, res) => {
       Table = sequelize.define(table_name, tableColumns, {
         timestamps: false,
         freezeTableName: true,
+        quoteIdentifiers: true, // Asegurar que Sequelize maneje correctamente los nombres de columnas con espacios
+      });
+    }
+
+    // Verificar si ya existe un registro con el mismo "Numero de identificacion" o "Correo electronico"
+    const existingRecord = await Table.findOne({
+      where: {
+        [Sequelize.Op.or]: [
+          { ['Numero de identificacion']: recordData['Numero de identificacion'] },
+          { ['Correo electronico']: recordData['Correo electronico'] },
+        ],
+      },
+    });
+
+    if (existingRecord) {
+      return res.status(400).json({
+        message: 'Ya existe un registro con el mismo Número de identificación o Correo electrónico.',
       });
     }
 
@@ -2304,13 +2325,14 @@ exports.createNewRecord = async (req, res) => {
     // Devolver la respuesta con el 'id' del nuevo registro creado
     res.status(201).json({
       message: 'Registro creado exitosamente',
-      id: newRecord.id,  // Asegurarse de que el 'id' esté presente en la respuesta
+      id: newRecord.id, // Asegurarse de que el 'id' esté presente en la respuesta
     });
   } catch (error) {
     console.error('Error creando el registro:', error);
     res.status(500).json({ message: 'Error creando el registro', error: error.message });
   }
 };
+
 
 
 
