@@ -1631,12 +1631,13 @@ const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toStrin
 // --------------------------- CONTROLADOR getFiles (modificado) -------------------------
 // ----------------------------------------------------------------------------------------
 
-// Controlador getFiles
+
 exports.getFiles = async (req, res) => {
   const { table_name, record_id } = req.params;
   const { source, caracterizacion_id } = req.query; // Asegurarse de recibir el 'caracterizacion_id' como parte de la consulta
 
   try {
+    // Validar el nombre de la tabla
     if (
       !table_name.startsWith('inscription_') &&
       !table_name.startsWith('provider_') &&
@@ -1653,6 +1654,7 @@ exports.getFiles = async (req, res) => {
       finalRecordId = caracterizacion_id || record_id; // Usar 'caracterizacion_id' si está presente
     }
 
+    // Construir la cláusula WHERE para la consulta
     const whereClause = {
       record_id: finalRecordId,
       table_name: table_name,
@@ -1662,11 +1664,13 @@ exports.getFiles = async (req, res) => {
       whereClause.source = source;
     }
 
+    // Obtener los archivos desde la base de datos
     const files = await File.findAll({
       where: whereClause,
       order: [['created_at', 'DESC']],
     });
 
+    // Mapear los archivos para incluir la URL y los campos adicionales
     const filesWithUrls = files.map((file) => {
       let fileUrl;
       if (table_name.startsWith('pi_')) {
@@ -1693,6 +1697,7 @@ exports.getFiles = async (req, res) => {
     });
   }
 };
+
 
 
 

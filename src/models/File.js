@@ -29,6 +29,15 @@ const File = sequelize.define('File', {
     allowNull: false,
     defaultValue: 'unknown', // Valor por defecto para los archivos que ya existan antes de la actualización.
   },
+  cumple: { // Nuevo campo 'cumple'
+    type: DataTypes.BOOLEAN,
+    allowNull: true, // Puede ser null si no se ha definido
+    defaultValue: null,
+  },
+  'descripcion cumplimiento': { // Nuevo campo 'descripcion cumplimiento'
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
