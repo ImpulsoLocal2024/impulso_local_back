@@ -1628,7 +1628,7 @@ const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toStrin
 
 
 // ----------------------------------------------------------------------------------------
-// --------------------------- CONTROLADOR getFiles -------------------------------------
+// --------------------------- CONTROLADOR getFiles (modificado) -------------------------
 // ----------------------------------------------------------------------------------------
 
 // Controlador getFiles
@@ -1679,6 +1679,8 @@ exports.getFiles = async (req, res) => {
         id: file.id,
         name: file.name,
         url: fileUrl,
+        cumple: file.cumple,
+        'descripcion cumplimiento': file['descripcion cumplimiento'],
       };
     });
 
@@ -1691,6 +1693,7 @@ exports.getFiles = async (req, res) => {
     });
   }
 };
+
 
 
 
