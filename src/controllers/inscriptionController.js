@@ -2675,6 +2675,158 @@ exports.deleteTableRecord = async (req, res) => {
   }
 };
 
+// ----------------------------------------------------------------------------------------
+// ------------------------------ CONTROLADOR createComment -------------------------------
+// ----------------------------------------------------------------------------------------
+
+/**
+ * Controlador para crear un nuevo comentario.
+ * 
+ * Espera recibir:
+ * - En los parámetros de la ruta:
+ *   - table_name: Nombre de la tabla a la que pertenece el registro.
+ *   - record_id: ID del registro al que se le está dejando el comentario.
+ * - En el cuerpo de la solicitud:
+ *   - comment: Contenido del comentario (text, requerido).
+ *   - caracterizacion_id: ID de caracterización (opcional, requerido para tablas 'pi_').
+ */
+exports.createComment = async (req, res) => {
+  const { table_name, record_id } = req.params;
+  const { comment, caracterizacion_id } = req.body;
+  const user_id = req.user.id; // Obtener el ID del usuario autenticado
+
+  // Validación de los campos requeridos
+  if (!table_name || !record_id || !comment) {
+    return res.status(400).json({
+      message: 'Los campos table_name, record_id y comment son obligatorios.',
+    });
+  }
+
+  try {
+    // Validar el nombre de la tabla
+    if (
+      !table_name.startsWith('inscription_') &&
+      !table_name.startsWith('provider_') &&
+      !table_name.startsWith('pi_')
+    ) {
+      return res.status(400).json({ message: 'Nombre de tabla inválido' });
+    }
+
+    // Definir el record_id final para buscar el registro
+    let finalRecordId = record_id;
+
+    // Si la tabla es 'pi_', utilizar el 'caracterizacion_id' como 'record_id'
+    if (table_name.startsWith('pi_')) {
+      if (!caracterizacion_id) {
+        return res.status(400).json({ message: 'El ID de caracterización es requerido para tablas pi_' });
+      }
+      finalRecordId = caracterizacion_id;
+    }
+
+    // Verificar que el registro existe en la tabla correspondiente
+    const [record] = await sequelize.query(
+      `SELECT id FROM ${table_name} WHERE id = :record_id`,
+      {
+        replacements: { record_id: finalRecordId },
+        type: QueryTypes.SELECT,
+      }
+    );
+
+    if (!record) {
+      return res.status(400).json({
+        message: `No se encontró un registro con id ${finalRecordId} en la tabla ${table_name}.`,
+      });
+    }
+
+    // Crear el nuevo comentario
+    const newComment = await Comment.create({
+      record_id: finalRecordId,
+      table_name,
+      user_id,
+      comment,
+    });
+
+    // Devolver una respuesta exitosa con los detalles del comentario creado
+    return res.status(201).json({
+      message: 'Comentario creado con éxito.',
+      comment: newComment,
+    });
+  } catch (error) {
+    console.error('Error al crear el comentario:', error);
+    return res.status(500).json({
+      message: 'Error interno del servidor al crear el comentario.',
+      error: error.message,
+    });
+  }
+};
+
+
+// ----------------------------------------------------------------------------------------
+// ------------------------------ CONTROLADOR getComments ---------------------------------
+// ----------------------------------------------------------------------------------------
+
+/**
+ * Controlador para obtener comentarios filtrados por table_name y record_id.
+ * 
+ * Espera recibir:
+ * - En los parámetros de la ruta:
+ *   - table_name: Nombre de la tabla a la que pertenece el registro.
+ *   - record_id: ID del registro del cual se quieren obtener los comentarios.
+ * - En la consulta (query parameters):
+ *   - caracterizacion_id: ID de caracterización (opcional, requerido para tablas 'pi_').
+ */
+exports.getComments = async (req, res) => {
+  const { table_name, record_id } = req.params;
+  const { caracterizacion_id } = req.query;
+
+  if (!table_name || !record_id) {
+    return res.status(400).json({ message: 'Los parámetros table_name y record_id son requeridos.' });
+  }
+
+  try {
+    // Validar el nombre de la tabla
+    if (
+      !table_name.startsWith('inscription_') &&
+      !table_name.startsWith('provider_') &&
+      !table_name.startsWith('pi_')
+    ) {
+      return res.status(400).json({ message: 'Nombre de tabla inválido' });
+    }
+
+    // Definir el record_id final para buscar comentarios
+    let finalRecordId = record_id;
+
+    // Si la tabla es 'pi_', utilizar el 'caracterizacion_id' como 'record_id'
+    if (table_name.startsWith('pi_')) {
+      finalRecordId = caracterizacion_id || record_id;
+    }
+
+    // Obtener los comentarios desde la base de datos
+    const comments = await Comment.findAll({
+      where: {
+        record_id: finalRecordId,
+        table_name: table_name,
+      },
+      include: [
+        {
+          model: User,
+          attributes: ['id', 'username'],
+        },
+      ],
+      order: [['created_at', 'DESC']],
+    });
+
+    return res.status(200).json({ comments });
+  } catch (error) {
+    console.error('Error obteniendo los comentarios:', error);
+    return res.status(500).json({
+      message: 'Error interno del servidor al obtener los comentarios.',
+      error: error.message,
+    });
+  }
+};
+
+
 
 
 

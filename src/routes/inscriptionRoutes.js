@@ -194,5 +194,25 @@ router.delete(
   inscriptionController.deleteTableRecord
 );
 
+// ----------------------------------------------------------------------------------------
+// ------------------------------ NUEVA RUTA createComment -------------------------------
+// ----------------------------------------------------------------------------------------
+
+// Ruta para crear un nuevo comentario (requiere autenticación y permiso 'manage_comments')
+router.post(
+  '/tables/:table_name/record/:record_id/comments',
+  authenticateJWT,
+  authorizePermission('manage_tables'),
+  inscriptionController.createComment
+);
+
+// Ruta para obtener comentarios de un registro (requiere autenticación y permiso 'view_comments')
+router.get(
+  '/tables/:table_name/record/:record_id/comments',
+  authenticateJWT,
+  authorizePermission('view_tables'),
+  inscriptionController.getComments
+);
+
 
 module.exports = router;
