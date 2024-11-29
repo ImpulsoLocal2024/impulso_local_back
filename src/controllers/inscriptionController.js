@@ -5,7 +5,9 @@ const { Parser } = require('json2csv');
 const csvParser = require('csv-parser');
 const fs = require('fs');
 const TablesMetadata = require('../models/TablesMetadata');
+const User = require('../models/User');
 const File = require('../models/File');
+const Comment = require('../models/Comments');
 const path = require('path');
 const archiver = require('archiver');
 // src/controllers/inscriptionController.js
