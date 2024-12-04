@@ -1965,7 +1965,7 @@ exports.getActiveCaracterizacionRecords = async (req, res) => {
       `
       SELECT *
       FROM inscription_caracterizacion
-      WHERE "${estadoColumn}" IN (4)
+      WHERE "${estadoColumn}" IN (7)
       `
     );
 
