@@ -876,7 +876,7 @@ exports.getTableRecords = async (req, res) => {
         INNER JOIN inscription_caracterizacion 
         ON "${table_name}".caracterizacion_id = inscription_caracterizacion.id
       `;
-      whereClauses.push(`inscription_caracterizacion."Estado" IN (1, 2)`); // Filtro por Estado
+      whereClauses.push(`inscription_caracterizacion."Estado" = 7`); // Filtro por Estado 7
     }
 
     // Inicializar contador para generar nombres únicos de parámetros
