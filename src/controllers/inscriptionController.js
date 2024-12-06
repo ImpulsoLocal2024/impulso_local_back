@@ -840,10 +840,11 @@ exports.downloadCsvData = async (req, res) => {
 // ----------------------------------------------------------------------------------------
 
 exports.getTableRecords = async (req, res) => {
-  const { table_name } = req.params;
-  const filters = req.query;
+  const { table_name } = req.params; // Nombre de la tabla
+  const filters = req.query; // Filtros pasados en la query string
 
   try {
+    // Validar que el nombre de la tabla sea válido
     if (
       !table_name.startsWith('inscription_') &&
       !table_name.startsWith('provider_') &&
@@ -852,6 +853,7 @@ exports.getTableRecords = async (req, res) => {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
+    // Obtener los campos de la tabla desde la metadata de la base de datos
     const [fields] = await sequelize.query(
       `
       SELECT column_name, data_type
@@ -863,51 +865,62 @@ exports.getTableRecords = async (req, res) => {
       }
     );
 
+    // Base de la consulta SQL
     let query = `SELECT "${table_name}".* FROM "${table_name}"`;
-    const replacements = {};
-    const whereClauses = [];
+    const replacements = {}; // Reemplazos para los parámetros dinámicos
+    const whereClauses = []; // Condiciones WHERE
 
+    // Manejo específico para tablas que empiezan con "pi_"
     if (table_name.startsWith('pi_')) {
       query += `
-        INNER JOIN inscription_caracterizacion ON "${table_name}".caracterizacion_id = inscription_caracterizacion.id
+        INNER JOIN inscription_caracterizacion 
+        ON "${table_name}".caracterizacion_id = inscription_caracterizacion.id
       `;
-      whereClauses.push(`inscription_caracterizacion."Estado" IN (1, 2)`);
+      whereClauses.push(`inscription_caracterizacion."Estado" IN (1, 2)`); // Filtro por Estado
     }
 
-    // Inicializar contador para generar nombres de parámetros únicos y válidos
+    // Inicializar contador para generar nombres únicos de parámetros
     let paramIndex = 1;
 
+    // Procesar filtros de la query string
     for (const [key, value] of Object.entries(filters)) {
       const fieldInCurrentTable = fields.find(
         (field) => field.column_name.toLowerCase() === key.toLowerCase()
       );
-      const isPiTable = table_name.startsWith('pi_');
 
-      // Generar un nombre de parámetro válido reemplazando espacios y caracteres especiales
-      const paramName = `param${paramIndex}`;
+      const paramName = `param${paramIndex}`; // Nombre del parámetro
       paramIndex++;
 
-      if (isPiTable && key === 'Estado') {
+      // Condición específica para la tabla "pi_" y el campo "Estado"
+      if (table_name.startsWith('pi_') && key === 'Estado') {
         whereClauses.push(`inscription_caracterizacion."Estado" = :${paramName}`);
         replacements[paramName] = value;
       } else if (fieldInCurrentTable) {
+        // Si el campo existe en la tabla actual, agregarlo como filtro
         whereClauses.push(`"${table_name}"."${fieldInCurrentTable.column_name}" = :${paramName}`);
         replacements[paramName] = value;
       }
     }
 
+    // Construir cláusula WHERE si hay condiciones
     if (whereClauses.length > 0) {
       query += ` WHERE ${whereClauses.join(' AND ')}`;
     }
 
+    // Log para depuración de la consulta generada
+    console.log('Consulta SQL generada:', query);
+    console.log('Reemplazos:', replacements);
+
+    // Ejecutar la consulta
     const [records] = await sequelize.query(query, { replacements });
 
+    // Mapear registros con sus tipos correspondientes
     const recordsWithTypes = records.map((record) => {
       const newRecord = {};
       for (const [key, value] of Object.entries(record)) {
         const field = fields.find((f) => f.column_name === key);
         if (field && field.data_type === 'boolean') {
-          newRecord[key] = value === null ? null : value;
+          newRecord[key] = value === null ? null : Boolean(value); // Asegurar tipo booleano
         } else {
           newRecord[key] = value;
         }
@@ -915,8 +928,13 @@ exports.getTableRecords = async (req, res) => {
       return newRecord;
     });
 
+    // Log de los registros obtenidos
+    console.log('Registros obtenidos:', recordsWithTypes);
+
+    // Enviar respuesta con los registros procesados
     res.status(200).json(recordsWithTypes);
   } catch (error) {
+    // Manejo de errores y logs para depuración
     console.error('Error obteniendo los registros:', error);
     res.status(500).json({
       message: 'Error obteniendo los registros',
@@ -924,6 +942,7 @@ exports.getTableRecords = async (req, res) => {
     });
   }
 };
+
 
 
 // ----------------------------------------------------------------------------------------
@@ -1956,11 +1975,11 @@ exports.getActiveCaracterizacionRecords = async (req, res) => {
     const estadoColumn = columns[0].column_name;
 
     // ----------------------------------------------------------------------------------------
-    // -------------------- CONSULTAR REGISTROS CON ESTADO 1 O 2 -------------------------------
+    // -------------------- CONSULTAR REGISTROS CON ESTADO 7 -------------------------------
     // ----------------------------------------------------------------------------------------
 
     // Realiza una consulta para obtener todos los registros de la tabla 'inscription_caracterizacion'
-    // donde la columna 'estado' (o su equivalente exacto) tiene un valor de 1 o 2.
+    // donde la columna 'estado' (o su equivalente exacto) tiene un valor de 7.
     const [records] = await sequelize.query(
       `
       SELECT *
