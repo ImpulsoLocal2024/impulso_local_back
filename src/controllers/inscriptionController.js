@@ -1574,7 +1574,7 @@ exports.getFieldOptions = async (req, res) => {
 // Controlador uploadFile
 exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
-  const { fileName, caracterizacion_id, source } = req.body;
+  const { fileName, caracterizacion_id, source, formulacion_id } = req.body; // Tomamos formulacion_id de req.body
 
   console.log("Contenido de req.body:", req.body);
   console.log("Contenido de req.file:", req.file);
@@ -1590,7 +1590,6 @@ exports.uploadFile = async (req, res) => {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
-    // Configuración de la ruta de almacenamiento persistente en Render
     let uploadDir;
     let finalRecordId = record_id;
 
@@ -1604,7 +1603,6 @@ exports.uploadFile = async (req, res) => {
       uploadDir = path.join('/var/data/uploads', table_name, record_id.toString());
     }
 
-    // Crea el directorio si no existe
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -1613,23 +1611,26 @@ exports.uploadFile = async (req, res) => {
     const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
     const newPath = path.join(uploadDir, finalFileName);
 
-    // Copia el archivo al destino final y elimina el archivo temporal
     fs.copyFileSync(req.file.path, newPath);
-    fs.unlinkSync(req.file.path); // Elimina el archivo temporal
+    fs.unlinkSync(req.file.path);
 
-    // Guarda la ruta relativa en la base de datos
-    // Define la ruta relativa para guardar en la base de datos
-const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
+    const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
 
-
-    // Guarda la información del archivo en la base de datos
-    const newFile = await File.create({
+    // Objeto base para crear el archivo
+    const fileData = {
       record_id: finalRecordId,
       table_name,
       name: finalFileName,
       file_path: relativeFilePath,
       source: source || 'unknown',
-    });
+    };
+
+    // Si es tabla pi_ y se proporciona formulacion_id, lo agregamos
+    if (table_name.startsWith('pi_') && formulacion_id) {
+      fileData.formulacion_id = formulacion_id;
+    }
+
+    const newFile = await File.create(fileData);
 
     console.log("Archivo subido y registrado:", newFile);
 
@@ -1645,6 +1646,7 @@ const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toStrin
     });
   }
 };
+
 
 
 
