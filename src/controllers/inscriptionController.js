@@ -1652,10 +1652,9 @@ const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toStrin
 // --------------------------- CONTROLADOR getFiles (modificado) -------------------------
 // ----------------------------------------------------------------------------------------
 
-
 exports.getFiles = async (req, res) => {
   const { table_name, record_id } = req.params;
-  const { source, caracterizacion_id } = req.query; // Asegurarse de recibir el 'caracterizacion_id' como parte de la consulta
+  const { source, caracterizacion_id, formulacion_id } = req.query; // Ahora obtenemos también formulacion_id
 
   try {
     // Validar el nombre de la tabla
@@ -1670,9 +1669,9 @@ exports.getFiles = async (req, res) => {
     // Definir el record_id final para buscar archivos
     let finalRecordId = record_id;
 
-    // Si la tabla es 'pi_', utilizar el 'caracterizacion_id' como 'record_id'
+    // Si la tabla es 'pi_', usar caracterizacion_id si está presente
     if (table_name.startsWith('pi_')) {
-      finalRecordId = caracterizacion_id || record_id; // Usar 'caracterizacion_id' si está presente
+      finalRecordId = caracterizacion_id || record_id;
     }
 
     // Construir la cláusula WHERE para la consulta
@@ -1685,13 +1684,18 @@ exports.getFiles = async (req, res) => {
       whereClause.source = source;
     }
 
+    // Si tenemos formulacion_id en la query y la tabla comienza con pi_, filtramos también por formulacion_id
+    if (table_name.startsWith('pi_') && formulacion_id) {
+      whereClause.formulacion_id = formulacion_id;
+    }
+
     // Obtener los archivos desde la base de datos
     const files = await File.findAll({
       where: whereClause,
       order: [['created_at', 'DESC']],
     });
 
-    // Mapear los archivos para incluir la URL y los campos adicionales
+    // Mapear los archivos para incluir la URL
     const filesWithUrls = files.map((file) => {
       let fileUrl;
       if (table_name.startsWith('pi_')) {
@@ -1718,6 +1722,7 @@ exports.getFiles = async (req, res) => {
     });
   }
 };
+
 
 
 
