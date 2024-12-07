@@ -1574,7 +1574,7 @@ exports.getFieldOptions = async (req, res) => {
 // Controlador uploadFile
 exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
-  const { fileName, caracterizacion_id, source, formulacion_id } = req.body; // Tomamos formulacion_id de req.body
+  const { fileName, caracterizacion_id, source } = req.body;
 
   console.log("Contenido de req.body:", req.body);
   console.log("Contenido de req.file:", req.file);
@@ -1590,6 +1590,7 @@ exports.uploadFile = async (req, res) => {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
+    // Configuración de la ruta de almacenamiento persistente en Render
     let uploadDir;
     let finalRecordId = record_id;
 
@@ -1603,6 +1604,7 @@ exports.uploadFile = async (req, res) => {
       uploadDir = path.join('/var/data/uploads', table_name, record_id.toString());
     }
 
+    // Crea el directorio si no existe
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -1611,26 +1613,23 @@ exports.uploadFile = async (req, res) => {
     const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
     const newPath = path.join(uploadDir, finalFileName);
 
+    // Copia el archivo al destino final y elimina el archivo temporal
     fs.copyFileSync(req.file.path, newPath);
-    fs.unlinkSync(req.file.path);
+    fs.unlinkSync(req.file.path); // Elimina el archivo temporal
 
-    const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
+    // Guarda la ruta relativa en la base de datos
+    // Define la ruta relativa para guardar en la base de datos
+const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
 
-    // Objeto base para crear el archivo
-    const fileData = {
+
+    // Guarda la información del archivo en la base de datos
+    const newFile = await File.create({
       record_id: finalRecordId,
       table_name,
       name: finalFileName,
       file_path: relativeFilePath,
       source: source || 'unknown',
-    };
-
-    // Si es tabla pi_ y se proporciona formulacion_id, lo agregamos
-    if (table_name.startsWith('pi_') && formulacion_id) {
-      fileData.formulacion_id = formulacion_id;
-    }
-
-    const newFile = await File.create(fileData);
+    });
 
     console.log("Archivo subido y registrado:", newFile);
 
@@ -1649,14 +1648,14 @@ exports.uploadFile = async (req, res) => {
 
 
 
-
 // ----------------------------------------------------------------------------------------
 // --------------------------- CONTROLADOR getFiles (modificado) -------------------------
 // ----------------------------------------------------------------------------------------
 
+
 exports.getFiles = async (req, res) => {
   const { table_name, record_id } = req.params;
-  const { source, caracterizacion_id, formulacion_id } = req.query; // Ahora obtenemos también formulacion_id
+  const { source, caracterizacion_id } = req.query; // Asegurarse de recibir el 'caracterizacion_id' como parte de la consulta
 
   try {
     // Validar el nombre de la tabla
@@ -1671,9 +1670,9 @@ exports.getFiles = async (req, res) => {
     // Definir el record_id final para buscar archivos
     let finalRecordId = record_id;
 
-    // Si la tabla es 'pi_', usar caracterizacion_id si está presente
+    // Si la tabla es 'pi_', utilizar el 'caracterizacion_id' como 'record_id'
     if (table_name.startsWith('pi_')) {
-      finalRecordId = caracterizacion_id || record_id;
+      finalRecordId = caracterizacion_id || record_id; // Usar 'caracterizacion_id' si está presente
     }
 
     // Construir la cláusula WHERE para la consulta
@@ -1686,18 +1685,13 @@ exports.getFiles = async (req, res) => {
       whereClause.source = source;
     }
 
-    // Si tenemos formulacion_id en la query y la tabla comienza con pi_, filtramos también por formulacion_id
-    if (table_name.startsWith('pi_') && formulacion_id) {
-      whereClause.formulacion_id = formulacion_id;
-    }
-
     // Obtener los archivos desde la base de datos
     const files = await File.findAll({
       where: whereClause,
       order: [['created_at', 'DESC']],
     });
 
-    // Mapear los archivos para incluir la URL
+    // Mapear los archivos para incluir la URL y los campos adicionales
     const filesWithUrls = files.map((file) => {
       let fileUrl;
       if (table_name.startsWith('pi_')) {
@@ -1724,7 +1718,6 @@ exports.getFiles = async (req, res) => {
     });
   }
 };
-
 
 
 
