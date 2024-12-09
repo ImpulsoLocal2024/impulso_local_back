@@ -1605,8 +1605,8 @@ exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
   const { fileName, caracterizacion_id, source } = req.body;
 
-  // Si req.user no existe o no tiene id, definir un valor por defecto
-  const userId = req.user && req.user.id ? req.user.id : 1;
+  // Asegúrate de tener req.user.id o asignar un valor por defecto
+  const userId = (req.user && req.user.id) ? req.user.id : 1;
 
   console.log("Contenido de req.body:", req.body);
   console.log("Contenido de req.file:", req.file);
@@ -1644,7 +1644,7 @@ exports.uploadFile = async (req, res) => {
     const newPath = path.join(uploadDir, finalFileName);
 
     fs.copyFileSync(req.file.path, newPath);
-    fs.unlinkSync(req.file.path);
+    fs.unlinkSync(req.file.path); // Elimina el archivo temporal
 
     const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
 
@@ -1658,6 +1658,18 @@ exports.uploadFile = async (req, res) => {
 
     console.log("Archivo subido y registrado:", newFile);
 
+    // Insertar en el historial
+    await insertHistory(
+      table_name,
+      finalRecordId,
+      userId,
+      'upload_file',
+      null,
+      null,
+      null,
+      `Se subió el archivo: ${newFile.name}`
+    );
+
     res.status(200).json({
       message: 'Archivo subido exitosamente',
       file: newFile,
@@ -1670,10 +1682,6 @@ exports.uploadFile = async (req, res) => {
     });
   }
 };
-
-
-
-
 
 // ----------------------------------------------------------------------------------------
 // --------------------------- CONTROLADOR getFiles (modificado) -------------------------
