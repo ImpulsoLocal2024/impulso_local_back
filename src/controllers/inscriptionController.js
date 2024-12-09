@@ -1600,13 +1600,9 @@ exports.getFieldOptions = async (req, res) => {
 // --------------------------- CONTROLADOR uploadFile -------------------------------------
 // ----------------------------------------------------------------------------------------
 
-// Controlador uploadFile
 exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
-  const { fileName, caracterizacion_id, source } = req.body;
-
-  // Asegúrate de tener req.user.id o asignar un valor por defecto
-  const userId = (req.user && req.user.id) ? req.user.id : 1;
+  const { fileName, caracterizacion_id, source, user_id } = req.body; // user_id viene del front
 
   console.log("Contenido de req.body:", req.body);
   console.log("Contenido de req.file:", req.file);
@@ -1658,11 +1654,11 @@ exports.uploadFile = async (req, res) => {
 
     console.log("Archivo subido y registrado:", newFile);
 
-    // Insertar en el historial
+    // Insertar en el historial usando user_id del front
     await insertHistory(
       table_name,
       finalRecordId,
-      userId,
+      user_id, // sin fallback, usar el que viene del front
       'upload_file',
       null,
       null,
@@ -1682,6 +1678,7 @@ exports.uploadFile = async (req, res) => {
     });
   }
 };
+
 
 // ----------------------------------------------------------------------------------------
 // --------------------------- CONTROLADOR getFiles (modificado) -------------------------
