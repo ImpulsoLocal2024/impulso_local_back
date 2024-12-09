@@ -1280,27 +1280,27 @@ exports.updateTableRecord = async (req, res) => {
 exports.updatePiRecord = async (req, res) => {
   const { table_name, record_id } = req.params;
   const updatedData = req.body;
+  const userId = req.user.id; // Como está protegido por authenticateJWT, req.user debería existir
 
   try {
-    // Validar el prefijo de la tabla.
     if (!table_name.startsWith('pi_')) {
       return res.status(400).json({ message: 'Nombre de tabla inválido para este controlador.' });
     }
 
-    // Validar que la tabla tenga registros existentes.
-    const [recordExists] = await sequelize.query(
-      `SELECT 1 FROM "${table_name}" WHERE id = ?`,
-      {
-        replacements: [record_id],
-        type: sequelize.QueryTypes.SELECT,
-      }
-    );
+    // Obtener el registro antes de actualizar
+    const oldRecordQuery = `
+      SELECT * FROM "${table_name}" WHERE id = :record_id
+    `;
+    const [oldRecord] = await sequelize.query(oldRecordQuery, {
+      replacements: { record_id },
+      type: sequelize.QueryTypes.SELECT,
+    });
 
-    if (!recordExists) {
+    if (!oldRecord) {
       return res.status(404).json({ message: 'Registro no encontrado' });
     }
 
-    // Obtener columnas válidas.
+    // Obtener columnas válidas
     const fieldsQueryResult = await sequelize.query(
       `SELECT column_name FROM information_schema.columns WHERE LOWER(table_name) = LOWER(?)`,
       {
@@ -1308,22 +1308,13 @@ exports.updatePiRecord = async (req, res) => {
         type: sequelize.QueryTypes.SELECT,
       }
     );
-
-    const fieldsQuery = Array.isArray(fieldsQueryResult) ? fieldsQueryResult : [fieldsQueryResult];
-
-    console.log('fieldsQuery:', fieldsQuery);
-
-    // Asegurarse de que fieldsQuery sea un array de objetos y convertirlo en un array de nombres de columnas.
-    const fields = fieldsQuery.map((field) => field.column_name);
+    const fields = fieldsQueryResult.map((field) => field.column_name);
 
     if (fields.length === 0) {
       console.error('Error: No se encontraron campos válidos en la tabla:', table_name);
       return res.status(500).json({ message: 'No se pudieron obtener los campos de la tabla.' });
     }
 
-    console.log('Campos válidos:', fields);
-
-    // Filtrar los datos proporcionados para incluir solo aquellos que correspondan a columnas válidas.
     const filteredData = {};
     for (const key in updatedData) {
       if (fields.includes(key) && updatedData[key] !== undefined && updatedData[key] !== null) {
@@ -1331,14 +1322,10 @@ exports.updatePiRecord = async (req, res) => {
       }
     }
 
-    console.log('Datos filtrados para la actualización:', filteredData);
-
-    // Si no hay campos válidos para actualizar, devolver un error.
     if (Object.keys(filteredData).length === 0) {
       return res.status(400).json({ message: 'No se proporcionaron campos válidos para actualizar.' });
     }
 
-    // Construir la cláusula SET para la consulta SQL.
     const fieldNames = Object.keys(filteredData);
     const fieldValues = Object.values(filteredData);
 
@@ -1353,10 +1340,6 @@ exports.updatePiRecord = async (req, res) => {
       RETURNING *
     `;
 
-    console.log('Consulta SQL:', query);
-    console.log('Valores de los campos:', [...fieldValues, record_id]);
-
-    // Ejecutar la consulta utilizando los valores y el ID del registro.
     const [result] = await sequelize.query(query, {
       bind: [...fieldValues, record_id],
       type: sequelize.QueryTypes.UPDATE,
@@ -1366,12 +1349,33 @@ exports.updatePiRecord = async (req, res) => {
       return res.status(404).json({ message: 'Registro no encontrado después de la actualización.' });
     }
 
-    res.status(200).json({ message: 'Registro actualizado con éxito', record: result[0] });
+    const newRecord = result[0];
+
+    // Registrar cambios en el historial
+    for (const key of fieldNames) {
+      const oldValue = oldRecord[key] !== undefined ? oldRecord[key] : null;
+      const newValue = newRecord[key] !== undefined ? newRecord[key] : null;
+      if (String(oldValue) !== String(newValue)) {
+        await insertHistory(
+          table_name,
+          record_id,
+          userId,
+          'update',
+          key,
+          oldRecord[key],
+          newRecord[key],
+          `Campo ${key} actualizado`
+        );
+      }
+    }
+
+    res.status(200).json({ message: 'Registro actualizado con éxito', record: newRecord });
   } catch (error) {
     console.error('Error actualizando el registro (pi_):', error);
     res.status(500).json({ message: 'Error actualizando el registro', error: error.message });
   }
 };
+
 
 
 
@@ -2027,13 +2031,19 @@ exports.createTableRecord = async (req, res) => {
   const { table_name } = req.params;
   const data = req.body;
 
+  // Asegúrate que desde el frontend envíes user_id en req.body cuando llames a esta ruta,
+  // dado que no hay autenticación en esta ruta.
+  const userId = data.user_id; 
+  if (!userId) {
+    return res.status(400).json({ message: 'Falta user_id en el cuerpo de la petición para registrar el historial.' });
+  }
+
   try {
-    // Validar que el nombre de la tabla comience con 'pi_'.
     if (!table_name.startsWith('pi_')) {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
-    // Obtener los campos válidos de la tabla.
+    // Obtener campos de la tabla
     const fieldsQueryResult = await sequelize.query(
       `SELECT column_name FROM information_schema.columns WHERE LOWER(table_name) = LOWER(?)`,
       {
@@ -2042,25 +2052,24 @@ exports.createTableRecord = async (req, res) => {
       }
     );
 
-    const fieldsQuery = Array.isArray(fieldsQueryResult) ? fieldsQueryResult : [fieldsQueryResult];
-    const fields = fieldsQuery.map((field) => field.column_name).filter(Boolean);
+    const fields = fieldsQueryResult.map((field) => field.column_name).filter(Boolean);
 
     if (fields.length === 0) {
       console.error('No se encontraron campos válidos para la tabla:', table_name);
       return res.status(500).json({ message: 'No se pudieron obtener los campos de la tabla.' });
     }
 
-    // Filtrar los datos para incluir solo campos válidos.
+    // Filtrar datos
     const filteredData = {};
     for (const key in data) {
-      if (fields.includes(key) && data[key] !== undefined && data[key] !== null) {
+      if (fields.includes(key) && data[key] !== undefined && data[key] !== null && key !== 'user_id') {
         filteredData[key] = data[key];
       }
     }
 
-    // Lógica condicional dependiendo del nombre de la tabla.
+    let existingRecordId = null;
+
     if (table_name === 'pi_formulacion') {
-      // Para 'pi_formulacion', verificar si existe un registro con el mismo 'caracterizacion_id' y 'rel_id_prov'.
       if (filteredData.caracterizacion_id && filteredData.rel_id_prov) {
         const checkQuery = `
           SELECT id FROM "${table_name}" WHERE caracterizacion_id = :caracterizacion_id AND rel_id_prov = :rel_id_prov
@@ -2070,101 +2079,123 @@ exports.createTableRecord = async (req, res) => {
           type: sequelize.QueryTypes.SELECT,
         });
 
-        // Si existe un registro, actualizarlo.
         if (existingRecords && existingRecords.length > 0) {
-          const recordId = existingRecords[0].id;
-
-          // Construir la cláusula SET para la actualización.
-          const fieldNames = Object.keys(filteredData);
-          const fieldValues = Object.values(filteredData);
-          const setClause = fieldNames.map((field, index) => `"${field}" = $${index + 1}`).join(', ');
-
-          const updateQuery = `
-            UPDATE "${table_name}"
-            SET ${setClause}
-            WHERE id = $${fieldNames.length + 1}
-            RETURNING *
-          `;
-
-          const [updatedRecord] = await sequelize.query(updateQuery, {
-            bind: [...fieldValues, recordId],
-            type: sequelize.QueryTypes.UPDATE,
-          });
-
-          return res.status(200).json({
-            message: 'Registro actualizado con éxito',
-            record: updatedRecord[0],
-          });
+          existingRecordId = existingRecords[0].id;
         }
       }
     } else {
-      // Para otras tablas, verificar si existe un registro con el mismo 'caracterizacion_id'.
       if (filteredData.caracterizacion_id) {
         const checkQuery = `
-          SELECT id FROM "${table_name}" WHERE caracterizacion_id = :caracterizacion_id
+          SELECT * FROM "${table_name}" WHERE caracterizacion_id = :caracterizacion_id
         `;
         const existingRecords = await sequelize.query(checkQuery, {
           replacements: { caracterizacion_id: filteredData.caracterizacion_id },
           type: sequelize.QueryTypes.SELECT,
         });
 
-        // Si existe un registro, actualizarlo.
         if (existingRecords && existingRecords.length > 0) {
-          const recordId = existingRecords[0].id;
-
-          // Construir la cláusula SET para la actualización.
-          const fieldNames = Object.keys(filteredData);
-          const fieldValues = Object.values(filteredData);
-          const setClause = fieldNames.map((field, index) => `"${field}" = $${index + 1}`).join(', ');
-
-          const updateQuery = `
-            UPDATE "${table_name}"
-            SET ${setClause}
-            WHERE id = $${fieldNames.length + 1}
-            RETURNING *
-          `;
-
-          const [updatedRecord] = await sequelize.query(updateQuery, {
-            bind: [...fieldValues, recordId],
-            type: sequelize.QueryTypes.UPDATE,
-          });
-
-          return res.status(200).json({
-            message: 'Registro actualizado con éxito',
-            record: updatedRecord[0],
-          });
+          existingRecordId = existingRecords[0].id;
         }
       }
     }
 
-    // Si no existe un registro que coincida, proceder a crear uno nuevo.
-    const insertFields = Object.keys(filteredData)
-      .map((field) => `"${field}"`) // Rodear cada nombre de campo con comillas dobles.
-      .join(', ');
-    const insertValuesPlaceholders = Object.keys(filteredData)
-      .map((_, index) => `$${index + 1}`)
-      .join(', ');
+    if (existingRecordId) {
+      // Actualizar registro existente
+      const oldRecordQuery = `
+        SELECT * FROM "${table_name}" WHERE id = :record_id
+      `;
+      const [oldRecord] = await sequelize.query(oldRecordQuery, {
+        replacements: { record_id: existingRecordId },
+        type: sequelize.QueryTypes.SELECT,
+      });
 
-    const insertQuery = `
-      INSERT INTO "${table_name}" (${insertFields})
-      VALUES (${insertValuesPlaceholders})
-      RETURNING *
-    `;
+      const fieldNames = Object.keys(filteredData);
+      const fieldValues = Object.values(filteredData);
+      const setClause = fieldNames.map((field, index) => `"${field}" = $${index + 1}`).join(', ');
 
-    const [newRecord] = await sequelize.query(insertQuery, {
-      bind: Object.values(filteredData),
-      type: sequelize.QueryTypes.INSERT,
-    });
+      const updateQuery = `
+        UPDATE "${table_name}"
+        SET ${setClause}
+        WHERE id = $${fieldNames.length + 1}
+        RETURNING *
+      `;
 
-    return res.status(201).json({
-      message: 'Registro creado con éxito',
-      record: newRecord[0],
-    });
+      const [updatedRecord] = await sequelize.query(updateQuery, {
+        bind: [...fieldValues, existingRecordId],
+        type: sequelize.QueryTypes.UPDATE,
+      });
+
+      const newRecord = updatedRecord[0];
+
+      // Registrar cambios en el historial
+      for (const key of fieldNames) {
+        const oldValue = String(oldRecord[key]) || null;
+        const newValue = String(newRecord[key]) || null;
+        if (oldValue !== newValue) {
+          await insertHistory(
+            table_name,
+            existingRecordId,
+            userId,
+            'update',
+            key,
+            oldRecord[key],
+            newRecord[key],
+            `Campo ${key} actualizado`
+          );
+        }
+      }
+
+      return res.status(200).json({
+        message: 'Registro actualizado con éxito',
+        record: newRecord,
+      });
+    } else {
+      // Crear nuevo registro
+      const insertFields = Object.keys(filteredData)
+        .map((field) => `"${field}"`)
+        .join(', ');
+      const insertValuesPlaceholders = Object.keys(filteredData)
+        .map((_, index) => `$${index + 1}`)
+        .join(', ');
+
+      const insertQuery = `
+        INSERT INTO "${table_name}" (${insertFields})
+        VALUES (${insertValuesPlaceholders})
+        RETURNING *
+      `;
+
+      const [newRecord] = await sequelize.query(insertQuery, {
+        bind: Object.values(filteredData),
+        type: sequelize.QueryTypes.INSERT,
+      });
+
+      const createdRecord = newRecord[0];
+
+      // Registrar la creación en el historial: cada campo creado con oldValue = null
+      for (const key of Object.keys(filteredData)) {
+        await insertHistory(
+          table_name,
+          createdRecord.id,
+          userId,
+          'create',
+          key,
+          null,
+          createdRecord[key],
+          `Campo ${key} creado`
+        );
+      }
+
+      return res.status(201).json({
+        message: 'Registro creado con éxito',
+        record: createdRecord,
+      });
+    }
   } catch (error) {
     console.error('Error creando el registro:', error);
     res.status(500).json({ message: 'Error creando el registro', error: error.message });
   }
 };
+
 
 
 
