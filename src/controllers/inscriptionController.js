@@ -23,16 +23,20 @@ async function insertHistory(tableName, recordId, userId, changeType, fieldName,
      VALUES (:tableName, :recordId, :userId, :changeType, :fieldName, :oldValue, :newValue, :description)`,
     {
       replacements: {
-        tableName, recordId, userId, changeType, 
-        fieldName: fieldName || null, 
-        oldValue: oldValue || null, 
-        newValue: newValue || null, 
+        tableName,
+        recordId,
+        userId, // Asegúrate de tener userId aquí, no user_id
+        changeType,
+        fieldName: fieldName || null,
+        oldValue: oldValue || null,
+        newValue: newValue || null,
         description: description || null
       },
       type: sequelize.QueryTypes.INSERT,
     }
   );
 }
+
 
 
 // ----------------------------------------------------------------------------------------
