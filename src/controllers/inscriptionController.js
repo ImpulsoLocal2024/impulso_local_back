@@ -16,6 +16,25 @@ const { DataTypes } = require('sequelize');
 const FieldPreference = require('../models/FieldPreference')(sequelize, DataTypes);
 
 
+// Función auxiliar para insertar en el historial
+async function insertHistory(tableName, recordId, userId, changeType, fieldName, oldValue, newValue, description) {
+  await sequelize.query(
+    `INSERT INTO record_history (table_name, record_id, user_id, change_type, field_name, old_value, new_value, description)
+     VALUES (:tableName, :recordId, :userId, :changeType, :fieldName, :oldValue, :newValue, :description)`,
+    {
+      replacements: {
+        tableName, recordId, userId, changeType, 
+        fieldName: fieldName || null, 
+        oldValue: oldValue || null, 
+        newValue: newValue || null, 
+        description: description || null
+      },
+      type: sequelize.QueryTypes.INSERT,
+    }
+  );
+}
+
+
 // ----------------------------------------------------------------------------------------
 // -------------------------------- CONTROLADOR createTable -------------------------------
 // ----------------------------------------------------------------------------------------
@@ -1152,30 +1171,30 @@ exports.getTableRecordById = async (req, res) => {
 // ------------------------- CONTROLADOR updateTableRecord -------------------------------
 // ----------------------------------------------------------------------------------------
 
+// Controlador updateTableRecord (reemplaza el que ya tienes)
 exports.updateTableRecord = async (req, res) => {
   const { table_name, record_id } = req.params;
   const updatedData = req.body;
+  const user_id = req.user.id; // ID del usuario autenticado
 
   try {
-    // Validar el prefijo de la tabla.
     if (!table_name.startsWith('provider_') && !table_name.startsWith('inscription_')) {
       return res.status(400).json({ message: 'Nombre de tabla inválido para este controlador.' });
     }
 
-    // Validar que la tabla tenga registros existentes.
-    const [recordExists] = await sequelize.query(
-      `SELECT 1 FROM "${table_name}" WHERE id = ?`,
+    // Obtener el registro antes de actualizar
+    const [oldRecord] = await sequelize.query(
+      `SELECT * FROM "${table_name}" WHERE id = :record_id`,
       {
-        replacements: [record_id],
+        replacements: { record_id },
         type: sequelize.QueryTypes.SELECT,
       }
     );
 
-    if (!recordExists) {
+    if (!oldRecord) {
       return res.status(404).json({ message: 'Registro no encontrado' });
     }
 
-    // Obtener columnas válidas.
     const fieldsQuery = await sequelize.query(
       `SELECT column_name FROM information_schema.columns WHERE LOWER(table_name) = LOWER(?)`,
       {
@@ -1184,15 +1203,12 @@ exports.updateTableRecord = async (req, res) => {
       }
     );
 
-    // Asegurarse de que fieldsQuery sea un array y tenga la estructura esperada.
     const fields = Array.isArray(fieldsQuery) ? fieldsQuery.map((field) => field.column_name) : [];
 
-    // Verificar que la estructura sea válida antes de proceder.
     if (fields.length === 0) {
       return res.status(500).json({ message: 'No se pudieron obtener los campos de la tabla.' });
     }
 
-    // Filtrar los datos proporcionados para incluir solo aquellos que correspondan a columnas válidas.
     const filteredData = {};
     for (const key in updatedData) {
       if (fields.includes(key) && updatedData[key] !== undefined && updatedData[key] !== null) {
@@ -1200,12 +1216,10 @@ exports.updateTableRecord = async (req, res) => {
       }
     }
 
-    // Si no hay campos válidos para actualizar, devolver un error.
     if (Object.keys(filteredData).length === 0) {
       return res.status(400).json({ message: 'No se proporcionaron campos válidos para actualizar.' });
     }
 
-    // Construir la cláusula SET para la consulta SQL.
     const fieldNames = Object.keys(filteredData);
     const fieldValues = Object.values(filteredData);
 
@@ -1213,7 +1227,6 @@ exports.updateTableRecord = async (req, res) => {
       .map((field, index) => `"${field}" = $${index + 1}`)
       .join(', ');
 
-    // Construir la consulta de actualización.
     const query = `
       UPDATE "${table_name}"
       SET ${setClause}
@@ -1221,24 +1234,40 @@ exports.updateTableRecord = async (req, res) => {
       RETURNING *
     `;
 
-    // Ejecutar la consulta utilizando los valores y el ID del registro.
     const [result] = await sequelize.query(query, {
       bind: [...fieldValues, record_id],
       type: sequelize.QueryTypes.UPDATE,
     });
 
-    // Si no se encuentra ningún registro actualizado, devolver un error.
     if (result.length === 0) {
       return res.status(404).json({ message: 'Registro no encontrado después de la actualización.' });
     }
 
-    // Responder con el registro actualizado.
-    res.status(200).json({ message: 'Registro actualizado con éxito', record: result[0] });
+    const newRecord = result[0];
+
+    // Registrar cambios en el historial
+    for (const key of Object.keys(filteredData)) {
+      if (String(oldRecord[key]) !== String(newRecord[key])) {
+        await insertHistory(
+          table_name,
+          record_id,
+          user_id,
+          'update',
+          key,
+          oldRecord[key],
+          newRecord[key],
+          `Campo ${key} actualizado`
+        );
+      }
+    }
+
+    res.status(200).json({ message: 'Registro actualizado con éxito', record: newRecord });
   } catch (error) {
     console.error('Error actualizando el registro:', error);
     res.status(500).json({ message: 'Error actualizando el registro', error: error.message });
   }
 };
+
 
 // ----------------------------------------------------------------------------------------
 // ------------------------- CONTROLADOR updatePiRecord -----------------------------------
@@ -1590,7 +1619,6 @@ exports.uploadFile = async (req, res) => {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
-    // Configuración de la ruta de almacenamiento persistente en Render
     let uploadDir;
     let finalRecordId = record_id;
 
@@ -1604,7 +1632,6 @@ exports.uploadFile = async (req, res) => {
       uploadDir = path.join('/var/data/uploads', table_name, record_id.toString());
     }
 
-    // Crea el directorio si no existe
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -1613,16 +1640,11 @@ exports.uploadFile = async (req, res) => {
     const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
     const newPath = path.join(uploadDir, finalFileName);
 
-    // Copia el archivo al destino final y elimina el archivo temporal
     fs.copyFileSync(req.file.path, newPath);
-    fs.unlinkSync(req.file.path); // Elimina el archivo temporal
+    fs.unlinkSync(req.file.path);
 
-    // Guarda la ruta relativa en la base de datos
-    // Define la ruta relativa para guardar en la base de datos
-const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
+    const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
 
-
-    // Guarda la información del archivo en la base de datos
     const newFile = await File.create({
       record_id: finalRecordId,
       table_name,
@@ -1632,6 +1654,18 @@ const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toStrin
     });
 
     console.log("Archivo subido y registrado:", newFile);
+
+    // Insertar en historial
+    await insertHistory(
+      table_name,
+      finalRecordId,
+      req.user.id,
+      'upload_file',
+      null,
+      null,
+      null,
+      `Se subió el archivo: ${newFile.name}`
+    );
 
     res.status(200).json({
       message: 'Archivo subido exitosamente',
@@ -1648,17 +1682,17 @@ const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toStrin
 
 
 
+
 // ----------------------------------------------------------------------------------------
 // --------------------------- CONTROLADOR getFiles (modificado) -------------------------
 // ----------------------------------------------------------------------------------------
 
-
+// Controlador getFiles (sin cambios)
 exports.getFiles = async (req, res) => {
   const { table_name, record_id } = req.params;
-  const { source, caracterizacion_id } = req.query; // Asegurarse de recibir el 'caracterizacion_id' como parte de la consulta
+  const { source, caracterizacion_id } = req.query;
 
   try {
-    // Validar el nombre de la tabla
     if (
       !table_name.startsWith('inscription_') &&
       !table_name.startsWith('provider_') &&
@@ -1667,15 +1701,12 @@ exports.getFiles = async (req, res) => {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
-    // Definir el record_id final para buscar archivos
     let finalRecordId = record_id;
 
-    // Si la tabla es 'pi_', utilizar el 'caracterizacion_id' como 'record_id'
     if (table_name.startsWith('pi_')) {
-      finalRecordId = caracterizacion_id || record_id; // Usar 'caracterizacion_id' si está presente
+      finalRecordId = caracterizacion_id || record_id;
     }
 
-    // Construir la cláusula WHERE para la consulta
     const whereClause = {
       record_id: finalRecordId,
       table_name: table_name,
@@ -1685,13 +1716,11 @@ exports.getFiles = async (req, res) => {
       whereClause.source = source;
     }
 
-    // Obtener los archivos desde la base de datos
     const files = await File.findAll({
       where: whereClause,
       order: [['created_at', 'DESC']],
     });
 
-    // Mapear los archivos para incluir la URL y los campos adicionales
     const filesWithUrls = files.map((file) => {
       let fileUrl;
       if (table_name.startsWith('pi_')) {
@@ -1718,6 +1747,7 @@ exports.getFiles = async (req, res) => {
     });
   }
 };
+
 
 
 
@@ -1797,28 +1827,17 @@ exports.downloadZip = (req, res) => {
 // --------------------------- CONTROLADOR deleteFile -------------------------------------
 // ----------------------------------------------------------------------------------------
 
+// Controlador deleteFile
 exports.deleteFile = async (req, res) => {
-  // Extrae 'file_id' y 'record_id' de los parámetros de la solicitud (URL).
   const { file_id, record_id } = req.params;
 
   try {
-    // ----------------------------------------------------------------------------------------
-    // ------------------------- BUSCAR EL ARCHIVO EN LA BASE DE DATOS ------------------------
-    // ----------------------------------------------------------------------------------------
-
-    // Busca el archivo en la base de datos utilizando el 'file_id'.
     const file = await File.findByPk(file_id);
 
-    // Si no se encuentra el archivo, devuelve un error 404 indicando que no fue encontrado.
     if (!file) {
       return res.status(404).json({ message: 'Archivo no encontrado' });
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ----------------- VALIDAR QUE EL NOMBRE DE LA TABLA TENGA UN PREFIJO VÁLIDO -------------
-    // ----------------------------------------------------------------------------------------
-
-    // Verificar que el nombre de la tabla del archivo tenga un prefijo válido ('inscription_', 'provider_' o 'pi_').
     if (
       !file.table_name.startsWith('inscription_') &&
       !file.table_name.startsWith('provider_') &&
@@ -1827,29 +1846,28 @@ exports.deleteFile = async (req, res) => {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ----------------------- ELIMINAR EL ARCHIVO DEL SISTEMA DE ARCHIVOS --------------------
-    // ----------------------------------------------------------------------------------------
-
-    // Construir la ruta completa del archivo en el sistema de archivos usando 'file.file_path'.
     const filePath = path.join(__dirname, '..', '..', file.file_path);
 
-    // Verificar si el archivo existe en el sistema de archivos.
     if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath); // Si existe, eliminar el archivo físico.
+      fs.unlinkSync(filePath);
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ------------------ ELIMINAR EL REGISTRO DEL ARCHIVO DE LA BASE DE DATOS -----------------
-    // ----------------------------------------------------------------------------------------
-
-    // Elimina el registro del archivo de la base de datos, asegurándose de que el 'file_id' y 'record_id' coincidan.
     await File.destroy({ where: { id: file_id, record_id: record_id } });
 
-    // Responder con un mensaje de éxito indicando que el archivo ha sido eliminado.
+    // Insertar en historial
+    await insertHistory(
+      file.table_name,
+      record_id,
+      req.user.id,
+      'delete_file',
+      null,
+      null,
+      null,
+      `Se eliminó el archivo: ${file.name}`
+    );
+
     res.status(200).json({ message: 'Archivo eliminado correctamente' });
   } catch (error) {
-    // Capturar cualquier error durante la operación y devolver un mensaje de error.
     console.error('Error eliminando el archivo:', error);
     res.status(500).json({
       message: 'Error eliminando el archivo',
@@ -1857,6 +1875,7 @@ exports.deleteFile = async (req, res) => {
     });
   }
 };
+
 
 
 // ----------------------------------------------------------------------------------------
@@ -2744,7 +2763,7 @@ exports.createComment = async (req, res) => {
       finalRecordId = caracterizacion_id;
     }
 
-    // Verificar que el registro existe en la tabla correspondiente
+    // Verificar que el registro existe
     const [record] = await sequelize.query(
       `SELECT id FROM ${table_name} WHERE id = :record_id`,
       {
@@ -2767,7 +2786,19 @@ exports.createComment = async (req, res) => {
       comment,
     });
 
-    // Devolver una respuesta exitosa con los detalles del comentario creado
+    // Insertar en el historial
+    await insertHistory(
+      table_name,
+      finalRecordId,
+      user_id,
+      'add_comment',
+      null,
+      null,
+      null,
+      `Comentario agregado: ${comment}`
+    );
+
+    // Respuesta exitosa
     return res.status(201).json({
       message: 'Comentario creado con éxito.',
       comment: newComment,
@@ -2780,6 +2811,7 @@ exports.createComment = async (req, res) => {
     });
   }
 };
+
 
 
 // ----------------------------------------------------------------------------------------
@@ -2796,6 +2828,7 @@ exports.createComment = async (req, res) => {
  * - En la consulta (query parameters):
  *   - caracterizacion_id: ID de caracterización (opcional, requerido para tablas 'pi_').
  */
+// Controlador getComments
 exports.getComments = async (req, res) => {
   const { table_name, record_id } = req.params;
   const { caracterizacion_id } = req.query;
@@ -2814,15 +2847,12 @@ exports.getComments = async (req, res) => {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
-    // Definir el record_id final para buscar comentarios
     let finalRecordId = record_id;
 
-    // Si la tabla es 'pi_', utilizar el 'caracterizacion_id' como 'record_id'
     if (table_name.startsWith('pi_')) {
       finalRecordId = caracterizacion_id || record_id;
     }
 
-    // Obtener los comentarios desde la base de datos
     const comments = await Comment.findAll({
       where: {
         record_id: finalRecordId,
@@ -2846,6 +2876,36 @@ exports.getComments = async (req, res) => {
     });
   }
 };
+
+
+//----------------- CONTROLADORES PARA EL HISTORIAL DE CAMBIOS --------------------------
+
+// Controlador getRecordHistory
+exports.getRecordHistory = async (req, res) => {
+  const { table_name, record_id } = req.params;
+
+  try {
+    const history = await sequelize.query(
+      `SELECT rh.*, u.username
+       FROM record_history rh
+       JOIN users u ON rh.user_id = u.id
+       WHERE rh.table_name = :table_name AND rh.record_id = :record_id
+       ORDER BY rh.created_at DESC`,
+      {
+        replacements: { table_name, record_id },
+        type: sequelize.QueryTypes.SELECT,
+      }
+    );
+    return res.status(200).json({ history });
+  } catch (error) {
+    console.error('Error obteniendo el historial:', error);
+    return res.status(500).json({
+      message: 'Error interno del servidor al obtener el historial.',
+      error: error.message,
+    });
+  }
+};
+
 
 
 

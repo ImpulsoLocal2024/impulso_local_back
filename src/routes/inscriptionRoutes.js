@@ -214,5 +214,15 @@ router.get(
   inscriptionController.getComments
 );
 
+// ----------------------------------------------------------------------------------------
+// NUEVA RUTA PARA HISTORIAL
+// ----------------------------------------------------------------------------------------
+router.get(
+  '/tables/:table_name/record/:record_id/history',
+  authenticateJWT,
+  authorizePermission('view_tables'),
+  inscriptionController.getRecordHistory
+);
+
 
 module.exports = router;
