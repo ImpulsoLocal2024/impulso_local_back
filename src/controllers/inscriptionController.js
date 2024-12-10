@@ -25,7 +25,7 @@ async function insertHistory(tableName, recordId, userId, changeType, fieldName,
       replacements: {
         tableName,
         recordId,
-        userId, // Asegúrate de tener userId aquí, no user_id
+        userId, // Se usa userId aquí, tal como se recibe en el parámetro
         changeType,
         fieldName: fieldName || null,
         oldValue: oldValue || null,
@@ -36,6 +36,7 @@ async function insertHistory(tableName, recordId, userId, changeType, fieldName,
     }
   );
 }
+
 
 
 
