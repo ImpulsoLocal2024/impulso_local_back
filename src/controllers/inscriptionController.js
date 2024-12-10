@@ -1631,12 +1631,25 @@ exports.uploadFile = async (req, res) => {
     const ext = path.extname(req.file.originalname);
     const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
 
-    // Extraer el formulacion_id del nombre del archivo antes de guardar
-    const match = finalFileName.match(/_formulacion_(\d+)/);
-    if (!match) {
-      return res.status(400).json({ message: 'No se pudo extraer el formulacion_id del nombre del archivo' });
+    let match;
+    let record_specific_id;
+    let record_type;
+
+    if (table_name === 'pi_formulacion') {
+      match = finalFileName.match(/_formulacion_(\d+)/);
+      record_type = 'formulacion';
+    } else if (table_name === 'pi_ejecucion') {
+      match = finalFileName.match(/_ejecucion_(\d+)/);
+      record_type = 'ejecucion';
+    } else {
+      return res.status(400).json({ message: 'Nombre de tabla no soportado para este caso' });
     }
-    const formulacion_id = parseInt(match[1], 10);
+
+    if (!match) {
+      return res.status(400).json({ message: `No se pudo extraer el ${record_type}_id del nombre del archivo` });
+    }
+
+    record_specific_id = parseInt(match[1], 10);
 
     const uploadDir = path.join('/var/data/uploads', 'inscription_caracterizacion', caracterizacion_id.toString());
     if (!fs.existsSync(uploadDir)) {
@@ -1650,7 +1663,7 @@ exports.uploadFile = async (req, res) => {
     const relativeFilePath = path.join('/uploads', table_name, caracterizacion_id.toString(), finalFileName);
 
     const newFile = await File.create({
-      record_id: caracterizacion_id,
+      record_id: record_specific_id, // Usamos el ID específico (formulacion_id o ejecucion_id)
       table_name,
       name: finalFileName,
       file_path: relativeFilePath,
@@ -1659,13 +1672,13 @@ exports.uploadFile = async (req, res) => {
 
     console.log("Archivo subido y registrado:", newFile);
 
-    // Llamar a insertHistory usando el formulacion_id como record_id, no el caracterizacion_id
+    // Llamar a insertHistory usando el ID específico como record_id
     await insertHistory(
       table_name,
-      formulacion_id, // Aquí usamos el formulacion_id en vez de caracterizacion_id
+      record_specific_id, // Aquí usamos el formulacion_id o ejecucion_id
       user_id,
       'upload_file',
-      `Archivo (formulacion_id:${formulacion_id})`,
+      `Archivo (${record_type}_id:${record_specific_id})`,
       null,
       newFile.name,
       `Se subió el archivo: ${newFile.name}`
@@ -1835,6 +1848,7 @@ exports.downloadZip = (req, res) => {
 // deleteFile (ejemplo ajustado)
 exports.deleteFile = async (req, res) => {
   const { file_id, record_id } = req.params;
+  const { table_name } = req.query; // Asegúrate de pasar el table_name si es necesario
 
   try {
     const file = await File.findByPk(file_id);
@@ -1853,24 +1867,37 @@ exports.deleteFile = async (req, res) => {
       fs.unlinkSync(filePath);
     }
 
-    await File.destroy({ where: { id: file_id, record_id: record_id } });
+    await File.destroy({ where: { id: file_id, record_id: file.record_id } });
 
-    // Extraer el formulacion_id del nombre del archivo
-    const match = file.name.match(/_formulacion_(\d+)/);
-    if (!match) {
-      return res.status(400).json({ message: 'No se pudo extraer el formulacion_id del nombre del archivo' });
+    let match;
+    let record_specific_id;
+    let record_type;
+
+    if (file.table_name === 'pi_formulacion') {
+      match = file.name.match(/_formulacion_(\d+)/);
+      record_type = 'formulacion';
+    } else if (file.table_name === 'pi_ejecucion') {
+      match = file.name.match(/_ejecucion_(\d+)/);
+      record_type = 'ejecucion';
+    } else {
+      return res.status(400).json({ message: 'Nombre de tabla no soportado para este caso' });
     }
-    const formulacion_id = parseInt(match[1], 10);
+
+    if (!match) {
+      return res.status(400).json({ message: `No se pudo extraer el ${record_type}_id del nombre del archivo` });
+    }
+
+    record_specific_id = parseInt(match[1], 10);
 
     const userId = req.body.user_id || (req.user && req.user.id) || null;
 
-    // Aquí usamos el formulacion_id como record_id
+    // Aquí usamos el ID específico como record_id
     await insertHistory(
       file.table_name,
-      formulacion_id,
+      record_specific_id,
       userId,
       'delete_file',
-      `Archivo (formulacion_id:${formulacion_id})`,
+      `Archivo (${record_type}_id:${record_specific_id})`,
       file.name,
       null,
       `Se eliminó el archivo: ${file.name}`
@@ -1885,6 +1912,7 @@ exports.deleteFile = async (req, res) => {
     });
   }
 };
+
 
 
 
