@@ -25,7 +25,7 @@ async function insertHistory(tableName, recordId, userId, changeType, fieldName,
       replacements: {
         tableName,
         recordId,
-        userId, // Asegúrate de tener userId aquí, no user_id
+        userId, // Se usa el parámetro userId tal como viene
         changeType,
         fieldName: fieldName || null,
         oldValue: oldValue || null,
@@ -36,6 +36,7 @@ async function insertHistory(tableName, recordId, userId, changeType, fieldName,
     }
   );
 }
+
 
 
 
@@ -1608,9 +1609,10 @@ exports.getFieldOptions = async (req, res) => {
 // --------------------------- CONTROLADOR uploadFile -------------------------------------
 // ----------------------------------------------------------------------------------------
 
+// Controlador uploadFile
 exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
-  const { fileName, caracterizacion_id, source, user_id } = req.body; // user_id viene del front
+  const { fileName, caracterizacion_id, source, user_id } = req.body;
 
   console.log("Contenido de req.body:", req.body);
   console.log("Contenido de req.file:", req.file);
@@ -1662,15 +1664,22 @@ exports.uploadFile = async (req, res) => {
 
     console.log("Archivo subido y registrado:", newFile);
 
-    // Insertar en el historial usando user_id del front
+    // Extraer formulacion_id del nombre del archivo si existe
+    let formulacion_id = null;
+    const match = finalFileName.match(/_formulacion_(\d+)/);
+    if (match) {
+      formulacion_id = parseInt(match[1], 10);
+    }
+
+    // Insertar en el historial con el formulacion_id en el fieldName si existe
     await insertHistory(
       table_name,
       finalRecordId,
-      user_id, // sin fallback, usar el que viene del front
+      user_id,
       'upload_file',
+      formulacion_id ? `Archivo (formulacion_id:${formulacion_id})` : 'Archivo',
       null,
-      null,
-      null,
+      newFile.name,
       `Se subió el archivo: ${newFile.name}`
     );
 
@@ -1686,6 +1695,7 @@ exports.uploadFile = async (req, res) => {
     });
   }
 };
+
 
 
 // ----------------------------------------------------------------------------------------
@@ -1859,14 +1869,23 @@ exports.deleteFile = async (req, res) => {
 
     await File.destroy({ where: { id: file_id, record_id: record_id } });
 
-    // Insertar en historial
+    // Extraer formulacion_id del nombre del archivo si existe
+    let formulacion_id = null;
+    const match = file.name.match(/_formulacion_(\d+)/);
+    if (match) {
+      formulacion_id = parseInt(match[1], 10);
+    }
+
+    // Obtener user_id (desde req.body o req.user)
+    const userId = req.body.user_id || (req.user && req.user.id) || null;
+
     await insertHistory(
       file.table_name,
       record_id,
-      req.user.id,
+      userId,
       'delete_file',
-      null,
-      null,
+      formulacion_id ? `Archivo (formulacion_id:${formulacion_id})` : 'Archivo',
+      file.name,
       null,
       `Se eliminó el archivo: ${file.name}`
     );
