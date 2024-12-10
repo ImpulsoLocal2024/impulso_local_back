@@ -1610,47 +1610,52 @@ exports.getFieldOptions = async (req, res) => {
 // ----------------------------------------------------------------------------------------
 
 // Controlador uploadFile
-// uploadFile (ejemplo ajustado)
 exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
   const { fileName, caracterizacion_id, source, user_id } = req.body;
+
+  console.log("Contenido de req.body:", req.body);
+  console.log("Contenido de req.file:", req.file);
 
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No se ha subido ningún archivo' });
     }
 
-    if (!table_name.startsWith('pi_')) {
-      return res.status(400).json({ message: 'Nombre de tabla inválido para este caso' });
+    if (!table_name.startsWith('inscription_') && 
+        !table_name.startsWith('provider_') && 
+        !table_name.startsWith('pi_')) {
+      return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
-    if (!caracterizacion_id) {
-      return res.status(400).json({ message: 'El ID de caracterización es requerido para tablas pi_' });
+    let uploadDir;
+    let finalRecordId = record_id;
+
+    if (table_name.startsWith('pi_')) {
+      if (!caracterizacion_id) {
+        return res.status(400).json({ message: 'El ID de caracterización es requerido para tablas pi_' });
+      }
+      uploadDir = path.join('/var/data/uploads', 'inscription_caracterizacion', caracterizacion_id.toString());
+      finalRecordId = caracterizacion_id;
+    } else {
+      uploadDir = path.join('/var/data/uploads', table_name, record_id.toString());
     }
 
-    const ext = path.extname(req.file.originalname);
-    const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
-
-    // Extraer el formulacion_id del nombre del archivo antes de guardar
-    const match = finalFileName.match(/_formulacion_(\d+)/);
-    if (!match) {
-      return res.status(400).json({ message: 'No se pudo extraer el formulacion_id del nombre del archivo' });
-    }
-    const formulacion_id = parseInt(match[1], 10);
-
-    const uploadDir = path.join('/var/data/uploads', 'inscription_caracterizacion', caracterizacion_id.toString());
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
+    const ext = path.extname(req.file.originalname);
+    const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
     const newPath = path.join(uploadDir, finalFileName);
-    fs.copyFileSync(req.file.path, newPath);
-    fs.unlinkSync(req.file.path);
 
-    const relativeFilePath = path.join('/uploads', table_name, caracterizacion_id.toString(), finalFileName);
+    fs.copyFileSync(req.file.path, newPath);
+    fs.unlinkSync(req.file.path); // Elimina el archivo temporal
+
+    const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
 
     const newFile = await File.create({
-      record_id: caracterizacion_id,
+      record_id: finalRecordId,
       table_name,
       name: finalFileName,
       file_path: relativeFilePath,
@@ -1659,13 +1664,20 @@ exports.uploadFile = async (req, res) => {
 
     console.log("Archivo subido y registrado:", newFile);
 
-    // Llamar a insertHistory usando el formulacion_id como record_id, no el caracterizacion_id
+    // Extraer formulacion_id del nombre del archivo si existe
+    let formulacion_id = null;
+    const match = finalFileName.match(/_formulacion_(\d+)/);
+    if (match) {
+      formulacion_id = parseInt(match[1], 10);
+    }
+
+    // Insertar en el historial con el formulacion_id en el fieldName si existe
     await insertHistory(
       table_name,
-      formulacion_id, // Aquí usamos el formulacion_id en vez de caracterizacion_id
+      finalRecordId,
       user_id,
       'upload_file',
-      `Archivo (formulacion_id:${formulacion_id})`,
+      formulacion_id ? `Archivo (formulacion_id:${formulacion_id})` : 'Archivo',
       null,
       newFile.name,
       `Se subió el archivo: ${newFile.name}`
@@ -1683,7 +1695,6 @@ exports.uploadFile = async (req, res) => {
     });
   }
 };
-
 
 
 
@@ -1832,7 +1843,6 @@ exports.downloadZip = (req, res) => {
 // ----------------------------------------------------------------------------------------
 
 // Controlador deleteFile
-// deleteFile (ejemplo ajustado)
 exports.deleteFile = async (req, res) => {
   const { file_id, record_id } = req.params;
 
@@ -1843,7 +1853,11 @@ exports.deleteFile = async (req, res) => {
       return res.status(404).json({ message: 'Archivo no encontrado' });
     }
 
-    if (!file.table_name.startsWith('pi_')) {
+    if (
+      !file.table_name.startsWith('inscription_') &&
+      !file.table_name.startsWith('provider_') &&
+      !file.table_name.startsWith('pi_')
+    ) {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
@@ -1855,22 +1869,22 @@ exports.deleteFile = async (req, res) => {
 
     await File.destroy({ where: { id: file_id, record_id: record_id } });
 
-    // Extraer el formulacion_id del nombre del archivo
+    // Extraer formulacion_id del nombre del archivo si existe
+    let formulacion_id = null;
     const match = file.name.match(/_formulacion_(\d+)/);
-    if (!match) {
-      return res.status(400).json({ message: 'No se pudo extraer el formulacion_id del nombre del archivo' });
+    if (match) {
+      formulacion_id = parseInt(match[1], 10);
     }
-    const formulacion_id = parseInt(match[1], 10);
 
+    // Obtener user_id (desde req.body o req.user)
     const userId = req.body.user_id || (req.user && req.user.id) || null;
 
-    // Aquí usamos el formulacion_id como record_id
     await insertHistory(
       file.table_name,
-      formulacion_id,
+      record_id,
       userId,
       'delete_file',
-      `Archivo (formulacion_id:${formulacion_id})`,
+      formulacion_id ? `Archivo (formulacion_id:${formulacion_id})` : 'Archivo',
       file.name,
       null,
       `Se eliminó el archivo: ${file.name}`
@@ -1885,7 +1899,6 @@ exports.deleteFile = async (req, res) => {
     });
   }
 };
-
 
 
 
