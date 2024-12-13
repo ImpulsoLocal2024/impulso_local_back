@@ -2127,12 +2127,46 @@ exports.createTableRecord = async (req, res) => {
         message: 'Registro creado con éxito',
         record: createdRecord,
       });
-    } else {
-      // Lógica original para otras tablas pi_
+    } else if (table_name === 'pi_ejecucion') {
+      // Nueva lógica: para pi_ejecucion también siempre crear un nuevo registro sin actualizar
+      const insertFields = Object.keys(filteredData).map((field) => `"${field}"`).join(', ');
+      const insertValuesPlaceholders = Object.keys(filteredData).map((_, index) => `$${index + 1}`).join(', ');
 
-      // Esta lógica asume que para otras tablas pi_ quieres mantener la condición
-      // de si existe un registro con el mismo caracterizacion_id actualizarlo,
-      // de lo contrario crearlo nuevo.
+      const insertQuery = `
+        INSERT INTO "${table_name}" (${insertFields})
+        VALUES (${insertValuesPlaceholders})
+        RETURNING *
+      `;
+
+      const [newRecord] = await sequelize.query(insertQuery, {
+        bind: Object.values(filteredData),
+        type: sequelize.QueryTypes.INSERT,
+      });
+
+      const createdRecord = newRecord[0];
+
+      // Registrar la creación en el historial: cada campo creado con oldValue = null
+      for (const key of Object.keys(filteredData)) {
+        await insertHistory(
+          table_name,
+          createdRecord.id,
+          userId,
+          'create',
+          key,
+          null,
+          createdRecord[key],
+          `Campo ${key} creado`
+        );
+      }
+
+      return res.status(201).json({
+        message: 'Registro creado con éxito',
+        record: createdRecord,
+      });
+    } else {
+      // Lógica original para otras tablas pi_ (ej. pi_formulacion)
+      // Si existe un registro con el mismo caracterizacion_id (y en el caso de pi_formulacion, rel_id_prov),
+      // se actualizará. Si no, se creará uno nuevo.
 
       let existingRecordId = null;
 
@@ -2199,8 +2233,8 @@ exports.createTableRecord = async (req, res) => {
 
         // Registrar cambios en el historial
         for (const key of fieldNames) {
-          const oldValue = String(oldRecord[key]) || null;
-          const newValue = String(newRecord[key]) || null;
+          const oldValue = oldRecord[key] !== null && oldRecord[key] !== undefined ? String(oldRecord[key]) : null;
+          const newValue = newRecord[key] !== null && newRecord[key] !== undefined ? String(newRecord[key]) : null;
           if (oldValue !== newValue) {
             await insertHistory(
               table_name,
@@ -2266,6 +2300,7 @@ exports.createTableRecord = async (req, res) => {
     res.status(500).json({ message: 'Error creando el registro', error: error.message });
   }
 };
+
 
 
 
