@@ -1614,6 +1614,9 @@ exports.uploadFile = async (req, res) => {
   const { table_name, record_id } = req.params;
   const { fileName, caracterizacion_id, source, user_id } = req.body;
 
+  // Asignamos un valor por defecto si user_id viene vacío o no viene
+  const finalUserId = user_id || 0; 
+
   console.log("Contenido de req.body:", req.body);
   console.log("Contenido de req.file:", req.file);
 
@@ -1622,9 +1625,11 @@ exports.uploadFile = async (req, res) => {
       return res.status(400).json({ message: 'No se ha subido ningún archivo' });
     }
 
-    if (!table_name.startsWith('inscription_') && 
-        !table_name.startsWith('provider_') && 
-        !table_name.startsWith('pi_')) {
+    if (
+      !table_name.startsWith('inscription_') &&
+      !table_name.startsWith('provider_') &&
+      !table_name.startsWith('pi_')
+    ) {
       return res.status(400).json({ message: 'Nombre de tabla inválido' });
     }
 
@@ -1633,12 +1638,24 @@ exports.uploadFile = async (req, res) => {
 
     if (table_name.startsWith('pi_')) {
       if (!caracterizacion_id) {
-        return res.status(400).json({ message: 'El ID de caracterización es requerido para tablas pi_' });
+        return res
+          .status(400)
+          .json({
+            message: 'El ID de caracterización es requerido para tablas pi_',
+          });
       }
-      uploadDir = path.join('/var/data/uploads', 'inscription_caracterizacion', caracterizacion_id.toString());
+      uploadDir = path.join(
+        '/var/data/uploads',
+        'inscription_caracterizacion',
+        caracterizacion_id.toString()
+      );
       finalRecordId = caracterizacion_id;
     } else {
-      uploadDir = path.join('/var/data/uploads', table_name, record_id.toString());
+      uploadDir = path.join(
+        '/var/data/uploads',
+        table_name,
+        record_id.toString()
+      );
     }
 
     if (!fs.existsSync(uploadDir)) {
@@ -1646,13 +1663,20 @@ exports.uploadFile = async (req, res) => {
     }
 
     const ext = path.extname(req.file.originalname);
-    const finalFileName = fileName ? `${fileName}${ext}` : req.file.originalname;
+    const finalFileName = fileName
+      ? `${fileName}${ext}`
+      : req.file.originalname;
     const newPath = path.join(uploadDir, finalFileName);
 
     fs.copyFileSync(req.file.path, newPath);
     fs.unlinkSync(req.file.path); // Elimina el archivo temporal
 
-    const relativeFilePath = path.join('/uploads', table_name, finalRecordId.toString(), finalFileName);
+    const relativeFilePath = path.join(
+      '/uploads',
+      table_name,
+      finalRecordId.toString(),
+      finalFileName
+    );
 
     const newFile = await File.create({
       record_id: finalRecordId,
@@ -1662,7 +1686,7 @@ exports.uploadFile = async (req, res) => {
       source: source || 'unknown',
     });
 
-    console.log("Archivo subido y registrado:", newFile);
+    console.log('Archivo subido y registrado:', newFile);
 
     // Extraer formulacion_id del nombre del archivo si existe
     let formulacion_id = null;
@@ -1675,7 +1699,7 @@ exports.uploadFile = async (req, res) => {
     await insertHistory(
       table_name,
       finalRecordId,
-      user_id,
+      finalUserId, // Usamos finalUserId
       'upload_file',
       formulacion_id ? `Archivo (formulacion_id:${formulacion_id})` : 'Archivo',
       null,
@@ -1695,6 +1719,7 @@ exports.uploadFile = async (req, res) => {
     });
   }
 };
+
 
 
 
