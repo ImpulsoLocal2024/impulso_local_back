@@ -2186,7 +2186,7 @@ exports.createTableRecord = async (req, res) => {
       const existingRecordQuery = `
         SELECT id FROM "${table_name}" 
         WHERE caracterizacion_id = :caracterizacion_id 
-          AND Pregunta = :Pregunta
+          AND "Pregunta" = :Pregunta
         LIMIT 1
       `;
       const existingRecords = await sequelize.query(existingRecordQuery, {
