@@ -2071,8 +2071,6 @@ exports.getActiveCaracterizacionRecords = async (req, res) => {
 // ---------------------------- CONTROLADOR createTableRecord -----------------------------
 // ----------------------------------------------------------------------------------------
 
-// controllers/inscriptionController.js
-
 exports.createTableRecord = async (req, res) => {
   const { table_name } = req.params;
   const data = req.body;
@@ -2117,8 +2115,8 @@ exports.createTableRecord = async (req, res) => {
       return res.status(400).json({ message: 'No se proporcionaron campos válidos para crear el registro.' });
     }
 
-    // Lógica especial para pi_propuesta_mejora y pi_ejecucion: Siempre crear un nuevo registro
-    if (table_name === 'pi_propuesta_mejora' || table_name === 'pi_ejecucion') {
+    // Lógica especial para pi_propuesta_mejora: Siempre crear un nuevo registro
+    if (table_name === 'pi_propuesta_mejora') {
       // Crear nuevo registro sin lógica de actualización
       const insertFields = Object.keys(filteredData).map((field) => `"${field}"`).join(', ');
       const insertValuesPlaceholders = Object.keys(filteredData).map((_, index) => `$${index + 1}`).join(', ');
@@ -2136,14 +2134,41 @@ exports.createTableRecord = async (req, res) => {
 
       const createdRecord = newRecord[0];
 
-      console.log(`Registro Creado para "${createdRecord.Pregunta}":`, createdRecord);
-
-      // Verificar si 'id' está presente
-      if (createdRecord && createdRecord.id) {
-        console.log(`ID recibido para "${createdRecord.Pregunta}": ${createdRecord.id}`);
-      } else {
-        console.error(`No se recibió el ID para la pregunta: "${createdRecord.Pregunta}"`, createdRecord);
+      // Registrar la creación en el historial: cada campo creado con oldValue = null
+      for (const key of Object.keys(filteredData)) {
+        await insertHistory(
+          table_name,
+          createdRecord.id,
+          userId,
+          'create',
+          key,
+          null,
+          createdRecord[key],
+          `Campo ${key} creado`
+        );
       }
+
+      return res.status(201).json({
+        message: 'Registro creado con éxito',
+        record: createdRecord,
+      });
+    } else if (table_name === 'pi_ejecucion') {
+      // Nueva lógica: para pi_ejecucion también siempre crear un nuevo registro sin actualizar
+      const insertFields = Object.keys(filteredData).map((field) => `"${field}"`).join(', ');
+      const insertValuesPlaceholders = Object.keys(filteredData).map((_, index) => `$${index + 1}`).join(', ');
+
+      const insertQuery = `
+        INSERT INTO "${table_name}" (${insertFields})
+        VALUES (${insertValuesPlaceholders})
+        RETURNING *
+      `;
+
+      const [newRecord] = await sequelize.query(insertQuery, {
+        bind: Object.values(filteredData),
+        type: sequelize.QueryTypes.INSERT,
+      });
+
+      const createdRecord = newRecord[0];
 
       // Registrar la creación en el historial: cada campo creado con oldValue = null
       for (const key of Object.keys(filteredData)) {
@@ -2164,10 +2189,12 @@ exports.createTableRecord = async (req, res) => {
         record: createdRecord,
       });
     } else {
-      // Lógica específica para tablas que pueden tener múltiples registros por caracterizacion_id (como pi_diagnostico_cap)
+      // Lógica original para otras tablas pi_ (ej. pi_formulacion)
+      // Si existe un registro con el mismo caracterizacion_id (y en el caso de pi_formulacion, rel_id_prov),
+      // se actualizará. Si no, se creará uno nuevo.
+
       let existingRecordId = null;
 
-      // Definir condiciones de búsqueda específicas para cada tabla
       if (table_name === 'pi_formulacion') {
         if (filteredData.caracterizacion_id && filteredData.rel_id_prov) {
           const checkQuery = `
@@ -2185,25 +2212,7 @@ exports.createTableRecord = async (req, res) => {
             existingRecordId = existingRecords[0].id;
           }
         }
-      } else if (table_name === 'pi_diagnostico_cap') {
-        if (filteredData.caracterizacion_id && filteredData.Pregunta) {
-          const checkQuery = `
-            SELECT id FROM "${table_name}" WHERE caracterizacion_id = :caracterizacion_id AND Pregunta = :Pregunta
-          `;
-          const existingRecords = await sequelize.query(checkQuery, {
-            replacements: {
-              caracterizacion_id: filteredData.caracterizacion_id,
-              Pregunta: filteredData.Pregunta
-            },
-            type: sequelize.QueryTypes.SELECT,
-          });
-
-          if (existingRecords && existingRecords.length > 0) {
-            existingRecordId = existingRecords[0].id;
-          }
-        }
       } else {
-        // Para otras tablas pi_*, basarse solo en caracterizacion_id
         if (filteredData.caracterizacion_id) {
           const checkQuery = `
             SELECT id FROM "${table_name}" WHERE caracterizacion_id = :caracterizacion_id
@@ -2246,15 +2255,6 @@ exports.createTableRecord = async (req, res) => {
         });
 
         const newRecord = updatedRecord[0];
-
-        console.log(`Registro Actualizado para "${newRecord.Pregunta}":`, newRecord);
-
-        // Verificar si 'id' está presente
-        if (newRecord && newRecord.id) {
-          console.log(`ID recibido para "${newRecord.Pregunta}": ${newRecord.id}`);
-        } else {
-          console.error(`No se recibió el ID para la pregunta: "${newRecord.Pregunta}"`, newRecord);
-        }
 
         // Registrar cambios en el historial
         for (const key of fieldNames) {
@@ -2300,15 +2300,6 @@ exports.createTableRecord = async (req, res) => {
 
         const createdRecord = newRecord[0];
 
-        console.log(`Registro Creado para "${createdRecord.Pregunta}":`, createdRecord);
-
-        // Verificar si 'id' está presente
-        if (createdRecord && createdRecord.id) {
-          console.log(`ID recibido para "${createdRecord.Pregunta}": ${createdRecord.id}`);
-        } else {
-          console.error(`No se recibió el ID para la pregunta: "${createdRecord.Pregunta}"`, createdRecord);
-        }
-
         // Registrar la creación en el historial: cada campo creado con oldValue = null
         for (const key of Object.keys(filteredData)) {
           await insertHistory(
@@ -2334,7 +2325,6 @@ exports.createTableRecord = async (req, res) => {
     res.status(500).json({ message: 'Error creando el registro', error: error.message });
   }
 };
-
 
 
 
