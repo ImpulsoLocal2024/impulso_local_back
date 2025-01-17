@@ -273,7 +273,7 @@ exports.getAsesors = async (req, res) => {
     // Obtener los usuarios con el role_id correspondiente
     const asesors = await User.findAll({
       where: { role_id: asesorRole.id },
-      attributes: ['id', 'username'], // Ajusta según los campos que necesites
+      attributes: ['id', 'username', 'documento'], // Ajusta según los campos que necesites
     });
 
     console.log('Usuarios obtenidos con el rol de asesor:', asesors);
