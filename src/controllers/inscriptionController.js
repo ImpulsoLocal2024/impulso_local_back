@@ -1932,85 +1932,53 @@ exports.deleteFile = async (req, res) => {
 // ----------------------------------------------------------------------------------------
 
 exports.downloadMultipleZip = async (req, res) => {
-  // Extrae 'tables' y 'recordIds' del cuerpo de la solicitud.
   const { tables, recordIds } = req.body;
 
   try {
-    // ----------------------------------------------------------------------------------------
-    // ------------------- VALIDAR QUE 'tables' Y 'recordIds' SEAN ARRAYS ----------------------
-    // ----------------------------------------------------------------------------------------
-
-    // Verifica que 'tables' y 'recordIds' sean arrays.
-    // Si no lo son, devuelve un error 400 indicando que deben ser arrays.
     if (!Array.isArray(tables) || !Array.isArray(recordIds)) {
       return res.status(400).json({ message: 'Las tablas y los IDs deben ser arrays' });
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ------------------------------ CREAR EL ARCHIVO ZIP ------------------------------------
-    // ----------------------------------------------------------------------------------------
+    // 1. Usa una ruta base absoluta (tómala de una variable de entorno si quieres portabilidad)
+    const UPLOADS_BASE = process.env.UPLOADS_DIR || '/var/data/uploads';
 
-    // Crear un archivo ZIP utilizando 'archiver' con compresión máxima (nivel 9).
+    // 2. Prepara el ZIP
     const archive = archiver('zip', { zlib: { level: 9 } });
-
-    // Configurar la respuesta HTTP para indicar que el contenido es un archivo adjunto (ZIP).
-    res.setHeader('Content-Disposition', `attachment; filename=archivos_seleccionados.zip`);
+    res.setHeader('Content-Disposition', 'attachment; filename=archivos_seleccionados.zip');
     res.setHeader('Content-Type', 'application/zip');
-
-    // Enlazar el archivo ZIP a la respuesta HTTP para que se descargue directamente.
     archive.pipe(res);
 
-    // ----------------------------------------------------------------------------------------
-    // ---------------------- ITERAR SOBRE CADA TABLA Y ID PARA AGREGAR ARCHIVOS --------------
-    // ----------------------------------------------------------------------------------------
-
-    // Iterar sobre cada nombre de tabla y cada 'record_id' proporcionado.
+    // 3. Recorre tablas e IDs
     for (const table_name of tables) {
+      if (
+        !table_name.startsWith('inscription_') &&
+        !table_name.startsWith('provider_') &&
+        !table_name.startsWith('pi_')
+      ) {
+        console.log(`Nombre de tabla inválido: ${table_name}, se omite`);
+        continue;
+      }
+
       for (const record_id of recordIds) {
-        // Verificar que el nombre de la tabla tenga un prefijo válido.
-        if (
-          !table_name.startsWith('inscription_') &&
-          !table_name.startsWith('provider_') &&
-          !table_name.startsWith('pi_')
-        ) {
-          console.log(`Nombre de tabla inválido: ${table_name}, se omite`);
-          continue; // Omite tablas con nombres no válidos.
-        }
+        // ⇢ Construye la ruta usando la base absoluta
+        const folderPath = path.join(UPLOADS_BASE, table_name, record_id.toString());
 
-        // ----------------------------------------------------------------------------------------
-        // ----------------------- RUTA A LA CARPETA DE ARCHIVOS Y VERIFICACIÓN -------------------
-        // ----------------------------------------------------------------------------------------
-
-        // Construir la ruta a la carpeta donde se almacenan los archivos para la tabla e ID actual.
-        const folderPath = path.join('uploads', table_name, record_id);
-
-        // Comprobar si la carpeta existe.
         if (fs.existsSync(folderPath)) {
-          // Si la carpeta existe, agregar todos los archivos de esta carpeta al ZIP.
-          // Se incluirán dentro de una carpeta en el ZIP con la estructura '{table_name}/{record_id}'.
+          // Usa la misma estructura simple que tenías
           archive.directory(folderPath, `${table_name}/${record_id}`);
         } else {
-          // Si la carpeta no existe, registrar un mensaje en la consola indicando que no se encontraron archivos.
           console.log(`No se encontraron archivos para ${table_name} con ID ${record_id}`);
         }
       }
     }
 
-    // ----------------------------------------------------------------------------------------
-    // ---------------------------- FINALIZAR EL ARCHIVO ZIP ----------------------------------
-    // ----------------------------------------------------------------------------------------
-
-    // Finalizar el proceso de creación del archivo ZIP, indicando que no se agregarán más archivos.
     await archive.finalize();
   } catch (error) {
-    // Capturar cualquier error durante la operación y devolver un mensaje de error.
     console.error('Error al crear el archivo ZIP:', error);
-    res.status(500).json({
-      message: 'Error al crear el archivo ZIP',
-      error: error.message,
-    });
+    res.status(500).json({ message: 'Error al crear el archivo ZIP', error: error.message });
   }
 };
+
 
 
 // ----------------------------------------------------------------------------------------
